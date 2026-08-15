@@ -34,38 +34,54 @@ def _gen_username() -> str:
 
 
 def _gen_password() -> str:
-    """Generate a memorable, strong password.
+    """Generate unique, uncrackable password.
 
-    Format: Word-Word-Number-Symbol (e.g., "CosmicTiger-42!@#")
-    - Uppercase first letter of each word
-    - Random word combinations
-    - Special characters for strength
-    - Same password for all accounts (memorable)
+    Format: Random mix of uppercase, lowercase, numbers, symbols
+    - Looks random and unreadable
+    - Same pattern for all accounts
+    - 20+ characters
     """
-    # Use config password if set, otherwise generate
+    # Use config password if set
     if config.registration.password and config.registration.password != "AutoGen2026!":
         return config.registration.password
 
-    # Adjectives and nouns for memorable passwords
-    adjectives = [
-        "Cosmic", "Lunar", "Solar", "Nova", "Stellar", "Crystal", "Quantum",
-        "Phantom", "Shadow", "Crystal", "Golden", "Silver", "Crimson", "Azure",
-        "Velvet", "Frozen", "Blazing", "Thunder", "Mystic", "Eternal",
-        "Royal", "Diamond", "Sapphire", "Emerald", "Ruby", "Pearl",
-    ]
-    nouns = [
-        "Tiger", "Dragon", "Phoenix", "Wolf", "Eagle", "Panther", "Falcon",
-        "Lion", "Bear", "Hawk", "Serpent", "Raven", "Stallion", "Cobra",
-        "Jaguar", "Leopard", "Shark", "Viper", "Blaze", "Storm",
-        "Thunder", "Lightning", "Flame", "Frost", "Wave", "Shadow",
-    ]
+    # Character pools
+    upper = string.ascii_uppercase
+    lower = string.ascii_lowercase
+    digits = string.digits
+    symbols = "!@#$%^&*"
 
-    adj = random.choice(adjectives)
-    noun = random.choice(nouns)
-    num = random.randint(100, 999)
-    symbols = random.choice(["!@#", "!$", "@#", "!@$", "#!@", "$!@"])
+    # Build password: random mix that looks chaotic
+    parts = []
+    # Start with 2 uppercase
+    parts.append(random.choice(upper))
+    parts.append(random.choice(upper))
+    # Add 4 lowercase
+    for _ in range(4):
+        parts.append(random.choice(lower))
+    # Add 2 digits
+    parts.append(random.choice(digits))
+    parts.append(random.choice(digits))
+    # Add 2 symbols
+    parts.append(random.choice(symbols))
+    parts.append(random.choice(symbols))
+    # Add 3 uppercase
+    for _ in range(3):
+        parts.append(random.choice(upper))
+    # Add 3 lowercase
+    for _ in range(3):
+        parts.append(random.choice(lower))
+    # Add 2 digits
+    parts.append(random.choice(digits))
+    parts.append(random.choice(digits))
+    # Add 2 symbols
+    parts.append(random.choice(symbols))
+    parts.append(random.choice(symbols))
 
-    return f"{adj}{noun}{num}{symbols}"
+    # Shuffle all characters
+    random.shuffle(parts)
+
+    return "".join(parts)
 
 
 def _is_blocked(page_text: str, title: str = "") -> bool:
