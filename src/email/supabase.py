@@ -27,19 +27,23 @@ class SupabaseEmailProvider(EmailProvider):
     def __init__(
         self,
         supabase_url: Optional[str] = None,
-        anon_key: Optional[str] = None,
+        publishable_key: Optional[str] = None,
     ):
-        self._url = supabase_url or os.getenv("SUPABASE_URL", "")
-        self._key = anon_key or os.getenv("SUPABASE_ANON_KEY", "")
+        self._url = supabase_url or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
+        self._key = publishable_key or os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "")
+
+        # Fail loudly if not configured
         if not self._url or not self._key:
-            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY (publishable key) required")
+            raise ValueError(
+                "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY required. "
+                "Do NOT use anon key or service_role key."
+            )
 
         self._session = requests.Session()
         self._session.headers.update({
             "apikey": self._key,
             "Authorization": f"Bearer {self._key}",
             "Content-Type": "application/json",
-            "x-supabase-publishable-key": self._key,
         })
         self._owner_token = os.urandom(16).hex()
 

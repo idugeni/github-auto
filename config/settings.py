@@ -28,12 +28,12 @@ class EmailConfig:
         default_factory=lambda: os.getenv("LEWATTOK_BASE_URL", "https://api.lewattok.web.id")
     )
 
-    # Fallback: Supabase (publishable key)
+    # Supabase (publishable key ONLY)
     supabase_url: str = field(
-        default_factory=lambda: os.getenv("SUPABASE_URL", "")
+        default_factory=lambda: os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
     )
-    supabase_anon_key: str = field(
-        default_factory=lambda: os.getenv("SUPABASE_ANON_KEY", "")
+    supabase_publishable_key: str = field(
+        default_factory=lambda: os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "")
     )
 
     # Fallback: Gmail

@@ -46,7 +46,7 @@ def _create_supabase() -> EmailProvider:
     from .supabase import SupabaseEmailProvider
     return SupabaseEmailProvider(
         supabase_url=config.email.supabase_url,
-        anon_key=config.email.supabase_anon_key,  # publishable key
+        publishable_key=config.email.supabase_publishable_key,
     )
 
 
@@ -64,7 +64,7 @@ def _is_provider_configured(name: str) -> bool:
     """Check if a provider has required config."""
     checks = {
         "lewattok": lambda: bool(config.email.lewattok_api_key),
-        "supabase": lambda: bool(config.email.supabase_url and config.email.supabase_anon_key),
+        "supabase": lambda: bool(config.email.supabase_url and config.email.supabase_publishable_key),
         "gmail": lambda: bool(os.getenv("GMAIL_CLIENT_ID")),
         "mailtm": lambda: True,  # Mail.tm works without API key
     }
