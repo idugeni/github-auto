@@ -1,4 +1,4 @@
-"""FunCaptcha (Arkose Labs) solver integration."""
+"""FunCaptcha (Arkose Labs) solver via CapSolver."""
 
 from __future__ import annotations
 
@@ -13,95 +13,52 @@ from .base import CaptchaSolver
 
 log = logging.getLogger(__name__)
 
+CAPSOLVER_API = "https://api.capsolver.com"
+
 
 class FunCaptchaSolver(CaptchaSolver):
-    """Solve FunCaptcha (Arkose Labs) via third-party service.
+    """Solve FunCaptcha (Arkose Labs) via CapSolver API."""
 
-    Supports CapMonster and 2Captcha.
-    """
-
-    def __init__(
-        self,
-        service: str = "capmonster",
-        api_key: Optional[str] = None,
-        timeout: int = 180,
-    ):
-        self._service = service
-        self._api_key = api_key or os.getenv(f"{service.upper()}_API_KEY", "")
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 180):
+        self._api_key = api_key or os.getenv("CAPSOLVER_API_KEY", "")
         self._timeout = timeout
 
-        if service == "capmonster":
-            self._base_url = "https://api.capmonster.cloud"
-        elif service == "2captcha":
-            self._base_url = "https://api.2captcha.com"
-        else:
-            raise ValueError(f"Unsupported service: {service}")
+        if not self._api_key:
+            log.warning("No CAPSOLVER_API_KEY, FunCaptcha solving disabled")
 
     def _create_task(self, sitekey: str, page_url: str, api_domain: str = "") -> str:
         """Create FunCaptcha solving task."""
-        if self._service == "capmonster":
-            task = {
-                "type": "FunCaptchaTaskProxyless",
-                "websiteURL": page_url,
-                "websitePublicKey": sitekey,
-            }
-            if api_domain:
-                task["websiteSubDomain"] = api_domain
+        task = {
+            "type": "FunCaptchaTaskProxyLess",
+            "websiteURL": page_url,
+            "websitePublicKey": sitekey,
+        }
+        if api_domain:
+            task["websiteSubDomain"] = api_domain
 
-            resp = requests.post(f"{self._base_url}/createTask", json={
-                "clientKey": self._api_key,
-                "task": task,
-            })
-            data = resp.json()
-            if data.get("errorId", 0) != 0:
-                raise RuntimeError(f"CapMonster error: {data.get('errorDescription', '')}")
-            return str(data.get("taskId", ""))
-
-        elif self._service == "2captcha":
-            resp = requests.post(f"{self._base_url}/in.php", data={
-                "key": self._api_key,
-                "method": "funcaptcha",
-                "sitekey": sitekey,
-                "pageurl": page_url,
-                "json": 1,
-            })
-            data = resp.json()
-            if data.get("status") != 1:
-                raise RuntimeError(f"2Captcha error: {data.get('request', '')}")
-            return str(data.get("request", ""))
-
-        raise ValueError(f"Unknown service: {self._service}")
+        resp = requests.post(f"{CAPSOLVER_API}/createTask", json={
+            "clientKey": self._api_key,
+            "task": task,
+        })
+        data = resp.json()
+        if data.get("errorId", 0) != 0:
+            raise RuntimeError(f"CapSolver error: {data.get('errorDescription', '')}")
+        return str(data.get("taskId", ""))
 
     def _get_result(self, task_id: str) -> str:
         """Get task result."""
-        if self._service == "capmonster":
-            resp = requests.post(f"{self._base_url}/getTaskResult", json={
-                "clientKey": self._api_key,
-                "taskId": task_id,
-            })
-            data = resp.json()
-            if data.get("status") == "ready":
-                return data.get("solution", {}).get("token", "")
-            return ""
-
-        elif self._service == "2captcha":
-            resp = requests.get(f"{self._base_url}/res.php", params={
-                "key": self._api_key,
-                "action": "get",
-                "id": task_id,
-                "json": 1,
-            })
-            data = resp.json()
-            if data.get("status") == 1:
-                return data.get("request", "")
-            return ""
-
+        resp = requests.post(f"{CAPSOLVER_API}/getTaskResult", json={
+            "clientKey": self._api_key,
+            "taskId": task_id,
+        })
+        data = resp.json()
+        if data.get("status") == "ready":
+            return data.get("solution", {}).get("token", "")
         return ""
 
     def solve(self, page: 'Page', url: Optional[str] = None) -> Optional[str]:
         """Solve FunCaptcha on page."""
         if not self._api_key:
-            log.warning("No API key configured for FunCaptcha solving")
             return None
 
         # Extract sitekey from page
@@ -122,11 +79,10 @@ class FunCaptchaSolver(CaptchaSolver):
             sitekey = None
 
         if not sitekey:
-            log.warning("No FunCaptcha sitekey found on page")
+            log.warning("No FunCaptcha sitekey found")
             return None
 
-        page_url = page.url
-        return self.solve_async(sitekey, page_url)
+        return self.solve_async(sitekey, page.url)
 
     def solve_async(self, sitekey: str, page_url: str, api_domain: str = "") -> Optional[str]:
         """Solve FunCaptcha via API."""

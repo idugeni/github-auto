@@ -1,4 +1,4 @@
-"""hCaptcha solver integration."""
+"""hCaptcha solver via CapSolver."""
 
 from __future__ import annotations
 
@@ -13,132 +13,37 @@ from .base import CaptchaSolver
 
 log = logging.getLogger(__name__)
 
-CAPTCHA_SOLVER_APIS = {
-    "capmonster": "https://api.capmonster.cloud",
-    "2captcha": "https://api.2captcha.com",
-    "anticaptcha": "https://api.anti-captcha.com",
-}
+CAPSOLVER_API = "https://api.capsolver.com"
 
 
 class HCaptchaSolver(CaptchaSolver):
-    """Solve hCaptcha via third-party CAPTCHA solving service.
+    """Solve hCaptcha via CapSolver API."""
 
-    Supports CapMonster, 2Captcha, and AntiCaptcha.
-    """
-
-    def __init__(
-        self,
-        service: str = "capmonster",
-        api_key: Optional[str] = None,
-        timeout: int = 180,
-    ):
-        self._service = service
-        self._api_key = api_key or os.getenv(f"{service.upper()}_API_KEY", "")
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 180):
+        self._api_key = api_key or os.getenv("CAPSOLVER_API_KEY", "")
         self._timeout = timeout
-        self._base_url = CAPTCHA_SOLVER_APIS.get(service, "")
 
         if not self._api_key:
-            log.warning("No API key for %s, hCaptcha solving disabled", service)
+            log.warning("No CAPSOLVER_API_KEY, hCaptcha solving disabled")
 
     def _create_task(self, sitekey: str, page_url: str) -> str:
-        """Create CAPTCHA solving task."""
-        if self._service == "capmonster":
-            return self._create_capmonster_task(sitekey, page_url)
-        elif self._service == "2captcha":
-            return self._create_2captcha_task(sitekey, page_url)
-        elif self._service == "anticaptcha":
-            return self._create_anticaptcha_task(sitekey, page_url)
-        else:
-            raise ValueError(f"Unknown service: {self._service}")
-
-    def _create_capmonster_task(self, sitekey: str, page_url: str) -> str:
-        """Create CapMonster task."""
-        resp = requests.post(f"{self._base_url}/createTask", json={
+        """Create hCaptcha solving task."""
+        resp = requests.post(f"{CAPSOLVER_API}/createTask", json={
             "clientKey": self._api_key,
             "task": {
-                "type": "HCaptchaTaskProxyless",
+                "type": "HCaptchaTaskProxyLess",
                 "websiteURL": page_url,
                 "websiteKey": sitekey,
             },
         })
-        if resp.status_code != 200:
-            raise RuntimeError(f"CapMonster task creation failed: {resp.text}")
         data = resp.json()
         if data.get("errorId", 0) != 0:
-            raise RuntimeError(f"CapMonster error: {data.get('errorDescription', '')}")
-        return str(data.get("taskId", ""))
-
-    def _create_2captcha_task(self, sitekey: str, page_url: str) -> str:
-        """Create 2Captcha task."""
-        resp = requests.post(f"{self._base_url}/in.php", data={
-            "key": self._api_key,
-            "method": "hcaptcha",
-            "sitekey": sitekey,
-            "pageurl": page_url,
-            "json": 1,
-        })
-        if resp.status_code != 200:
-            raise RuntimeError(f"2Captcha task creation failed: {resp.text}")
-        data = resp.json()
-        if data.get("status") != 1:
-            raise RuntimeError(f"2Captcha error: {data.get('request', '')}")
-        return str(data.get("request", ""))
-
-    def _create_anticaptcha_task(self, sitekey: str, page_url: str) -> str:
-        """Create AntiCaptcha task."""
-        resp = requests.post(f"{self._base_url}/createTask", json={
-            "clientKey": self._api_key,
-            "task": {
-                "type": "HCaptchaTaskProxyless",
-                "websiteURL": page_url,
-                "websiteKey": sitekey,
-            },
-        })
-        if resp.status_code != 200:
-            raise RuntimeError(f"AntiCaptcha task creation failed: {resp.text}")
-        data = resp.json()
-        if data.get("errorId", 0) != 0:
-            raise RuntimeError(f"AntiCaptcha error: {data.get('errorDescription', '')}")
+            raise RuntimeError(f"CapSolver error: {data.get('errorDescription', '')}")
         return str(data.get("taskId", ""))
 
     def _get_result(self, task_id: str) -> str:
         """Get task result."""
-        if self._service == "capmonster":
-            return self._get_capmonster_result(task_id)
-        elif self._service == "2captcha":
-            return self._get_2captcha_result(task_id)
-        elif self._service == "anticaptcha":
-            return self._get_anticaptcha_result(task_id)
-        else:
-            raise ValueError(f"Unknown service: {self._service}")
-
-    def _get_capmonster_result(self, task_id: str) -> str:
-        """Get CapMonster result."""
-        resp = requests.post(f"{self._base_url}/getTaskResult", json={
-            "clientKey": self._api_key,
-            "taskId": task_id,
-        })
-        data = resp.json()
-        if data.get("status") == "ready":
-            return data.get("solution", {}).get("gRecaptchaResponse", "")
-        return ""
-
-    def _get_2captcha_result(self, task_id: str) -> str:
-        """Get 2Captcha result."""
-        resp = requests.get(f"{self._base_url}/res.php", params={
-            "key": self._api_key,
-            "action": "get",
-            "id": task_id,
-            "json": 1,
-        })
-        data = resp.json()
-        if data.get("status") == 1:
-            return data.get("request", "")
-        return ""
-
-    def _get_anticaptcha_result(self, task_id: str) -> str:
-        """Get AntiCaptcha result."""
-        resp = requests.post(f"{self._base_url}/getTaskResult", json={
+        resp = requests.post(f"{CAPSOLVER_API}/getTaskResult", json={
             "clientKey": self._api_key,
             "taskId": task_id,
         })
@@ -148,13 +53,8 @@ class HCaptchaSolver(CaptchaSolver):
         return ""
 
     def solve(self, page: 'Page', url: Optional[str] = None) -> Optional[str]:
-        """Solve hCaptcha on page.
-
-        Note: This requires the page to have hCaptcha widget.
-        For API-only solving, use solve_async() instead.
-        """
+        """Solve hCaptcha on page."""
         if not self._api_key:
-            log.warning("No API key configured for hCaptcha solving")
             return None
 
         # Extract sitekey from page
@@ -174,14 +74,13 @@ class HCaptchaSolver(CaptchaSolver):
             sitekey = None
 
         if not sitekey:
-            log.warning("No hCaptcha sitekey found on page")
+            log.warning("No hCaptcha sitekey found")
             return None
 
-        page_url = page.url
-        return self.solve_async(sitekey, page_url)
+        return self.solve_async(sitekey, page.url)
 
     def solve_async(self, sitekey: str, page_url: str) -> Optional[str]:
-        """Solve hCaptcha via API (no browser needed)."""
+        """Solve hCaptcha via API."""
         if not self._api_key:
             return None
 
@@ -189,7 +88,6 @@ class HCaptchaSolver(CaptchaSolver):
             task_id = self._create_task(sitekey, page_url)
             log.info("hCaptcha task created: %s", task_id)
 
-            # Poll for result
             deadline = time.time() + self._timeout
             while time.time() < deadline:
                 time.sleep(3)
