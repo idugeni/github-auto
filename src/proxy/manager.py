@@ -1,8 +1,16 @@
-"""Proxy rotation and management."""
+"""Proxy rotation and management.
+
+Smart proxy system:
+- Auto-generates DataImpulse sticky proxies if proxies.txt is empty
+- Port-based sticky IPs (10000-20000)
+- Health tracking with cooldown
+- Country detection support
+"""
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,7 +37,14 @@ class ProxyEntry:
 
 
 class ProxyManager:
-    """Proxy rotation with health tracking."""
+    """Proxy rotation with health tracking.
+
+    Smart features:
+    - Auto-generates DataImpulse sticky proxies from credentials
+    - Port-based sticky IPs (each port = unique IP)
+    - Round-robin with health check
+    - Cooldown management
+    """
 
     def __init__(
         self,
@@ -46,7 +61,43 @@ class ProxyManager:
         elif proxy_file:
             self._load_file(proxy_file)
 
+        # Smart: auto-generate DataImpulse proxies if empty
+        if not self._entries:
+            self._auto_generate_dataimpulse()
+
+    def _auto_generate_dataimpulse(self) -> None:
+        """Auto-generate DataImpulse sticky proxies from env vars."""
+        username = os.getenv("PROXY_USERNAME", "")
+        password = os.getenv("PROXY_PASSWORD", "")
+        host = os.getenv("PROXY_HOST", "gw.dataimpulse.com")
+        port_start = int(os.getenv("PROXY_PORT_START", "10000"))
+        port_end = int(os.getenv("PROXY_PORT_END", "20000"))
+
+        if not username or not password:
+            log.debug("No DataImpulse credentials, skipping auto-generation")
+            return
+
+        log.info(
+            "Auto-generating DataImpulse sticky proxies: %s@%s:%d-%d",
+            username, host, port_start, port_end,
+        )
+
+        for port in range(port_start, port_end + 1):
+            url = f"http://{username}:{password}@{host}:{port}"
+            entry = ProxyEntry(
+                raw=url,
+                url=url,
+                username=username,
+                password=password,
+                host=host,
+                port=port,
+            )
+            self._entries.append(entry)
+
+        log.info("Generated %d DataImpulse sticky proxies", len(self._entries))
+
     def _load_file(self, path: str) -> None:
+        """Load proxies from file."""
         file_path = Path(path)
         if not file_path.exists():
             log.warning("Proxy file not found: %s", path)
@@ -97,8 +148,6 @@ class ProxyManager:
         if "@" in rest:
             left, right = rest.split("@", 1)
             # Determine which side has host:port
-            # Format 3/4: user:pass@host:port (right has 2 parts, second is numeric)
-            # Format 2: host:port@user:pass (left has 2 parts, second is numeric)
             right_parts = right.split(":")
             if len(right_parts) == 2:
                 try:
@@ -164,7 +213,7 @@ class ProxyManager:
         )
 
     def next(self) -> Optional[str]:
-        """Get next available proxy (round-robin)."""
+        """Get next available proxy (round-robin with health check)."""
         if not self._entries:
             return None
 
