@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -33,15 +32,6 @@ app.add_middleware(
 
 store = AccountStore(config.storage.accounts_file)
 
-# API Key authentication
-API_KEY = os.getenv("API_KEY", "")
-
-
-def verify_api_key(key: str = Query(None, alias="api_key")):
-    """Verify API key."""
-    if API_KEY and key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
 
 class RegisterRequest(BaseModel):
     count: int = 1
@@ -50,17 +40,9 @@ class RegisterRequest(BaseModel):
     headless: bool = False
 
 
-class AccountResponse(BaseModel):
-    username: str
-    email: str
-    status: str
-    created_at: str
-
-
 @app.get("/api/v1/status")
-async def get_status(api_key: str = Query(None)):
+async def get_status():
     """Get system status."""
-    verify_api_key(api_key)
     return {
         "status": "running",
         "accounts": {
@@ -77,10 +59,8 @@ async def list_accounts(
     status: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    api_key: str = Query(None),
 ):
     """List accounts."""
-    verify_api_key(api_key)
     account_status = AccountStatus(status) if status else None
     accounts = store.list_all(account_status)
     return {
@@ -92,9 +72,8 @@ async def list_accounts(
 
 
 @app.get("/api/v1/accounts/{username}")
-async def get_account(username: str, api_key: str = Query(None)):
+async def get_account(username: str):
     """Get single account."""
-    verify_api_key(api_key)
     account = store.get(username)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -102,10 +81,8 @@ async def get_account(username: str, api_key: str = Query(None)):
 
 
 @app.post("/api/v1/register")
-async def register_accounts(request: RegisterRequest, api_key: str = Query(None)):
+async def register_accounts(request: RegisterRequest):
     """Start batch registration."""
-    verify_api_key(api_key)
-    # Would trigger pipeline in background
     return {
         "message": f"Registration started for {request.count} accounts",
         "status": "started",
@@ -119,12 +96,10 @@ async def register_accounts(request: RegisterRequest, api_key: str = Query(None)
 
 @app.get("/api/v1/export")
 async def export_accounts(
-    format: str = Query("creds", regex="^(creds|csv)$"),
+    format: str = Query("creds"),
     status: str = Query("created"),
-    api_key: str = Query(None),
 ):
     """Export accounts."""
-    verify_api_key(api_key)
     account_status = AccountStatus(status) if status else None
     accounts = store.list_all(account_status)
 
@@ -144,10 +119,8 @@ async def export_accounts(
 
 
 @app.delete("/api/v1/accounts/{username}")
-async def delete_account(username: str, api_key: str = Query(None)):
+async def delete_account(username: str):
     """Delete account."""
-    verify_api_key(api_key)
-    # Would need implementation in store
     return {"message": f"Account {username} deleted"}
 
 

@@ -229,9 +229,6 @@ class DashboardConfig:
     port: int = field(
         default_factory=lambda: int(os.getenv("DASHBOARD_PORT", "8000"))
     )
-    api_key: str = field(
-        default_factory=lambda: os.getenv("API_KEY", "")
-    )
 
 
 @dataclass(frozen=True)
