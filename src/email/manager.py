@@ -1,7 +1,7 @@
 """Email manager — provider selection with fallback chain.
 
 Primary provider: LewatTok (lewattok.web.id)
-Fallback chain: LewatTok → Supabase → Gmail → Mail.tm
+Fallback: Supabase
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from .base import EmailProvider, Inbox
 log = logging.getLogger(__name__)
 
 # Provider priority order (LewatTok first)
-PROVIDER_PRIORITY = ["lewattok", "supabase", "gmail", "mailtm"]
+PROVIDER_PRIORITY = ["lewattok", "supabase"]
 
 
 def create_provider(name: Optional[str] = None) -> EmailProvider:
@@ -25,8 +25,6 @@ def create_provider(name: Optional[str] = None) -> EmailProvider:
     providers = {
         "lewattok": _create_lewattok,
         "supabase": _create_supabase,
-        "gmail": _create_gmail,
-        "mailtm": _create_mailtm,
     }
 
     factory = providers.get(provider_name)
@@ -50,35 +48,20 @@ def _create_supabase() -> EmailProvider:
     )
 
 
-def _create_gmail() -> EmailProvider:
-    from .gmail import GmailProvider
-    return GmailProvider()
-
-
-def _create_mailtm() -> EmailProvider:
-    from .mailtm import MailTmProvider
-    return MailTmProvider()
-
-
 def _is_provider_configured(name: str) -> bool:
     """Check if a provider has required config."""
     checks = {
         "lewattok": lambda: bool(config.email.lewattok_api_key),
         "supabase": lambda: bool(config.email.supabase_url and config.email.supabase_publishable_key),
-        "gmail": lambda: bool(os.getenv("GMAIL_CLIENT_ID")),
-        "mailtm": lambda: True,  # Mail.tm works without API key
     }
     return checks.get(name, lambda: False)()
-
-
-import os
 
 
 class EmailManager:
     """Manages email operations with automatic provider fallback.
 
     Primary: LewatTok
-    Fallback chain: LewatTok → Supabase → Gmail → Mail.tm
+    Fallback: Supabase
     """
 
     def __init__(self, primary: Optional[str] = None):
