@@ -32,13 +32,14 @@ class SupabaseEmailProvider(EmailProvider):
         self._url = supabase_url or os.getenv("SUPABASE_URL", "")
         self._key = anon_key or os.getenv("SUPABASE_ANON_KEY", "")
         if not self._url or not self._key:
-            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY required")
+            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY (publishable key) required")
 
         self._session = requests.Session()
         self._session.headers.update({
             "apikey": self._key,
             "Authorization": f"Bearer {self._key}",
             "Content-Type": "application/json",
+            "x-supabase-publishable-key": self._key,
         })
         self._owner_token = os.urandom(16).hex()
 

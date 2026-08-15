@@ -28,7 +28,7 @@ class EmailConfig:
         default_factory=lambda: os.getenv("LEWATTOK_BASE_URL", "https://api.lewattok.web.id")
     )
 
-    # Fallback: Supabase
+    # Fallback: Supabase (publishable key)
     supabase_url: str = field(
         default_factory=lambda: os.getenv("SUPABASE_URL", "")
     )

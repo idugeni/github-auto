@@ -46,7 +46,7 @@ def _create_supabase() -> EmailProvider:
     from .supabase import SupabaseEmailProvider
     return SupabaseEmailProvider(
         supabase_url=config.email.supabase_url,
-        anon_key=config.email.supabase_anon_key,
+        anon_key=config.email.supabase_anon_key,  # publishable key
     )
 
 
