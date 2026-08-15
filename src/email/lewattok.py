@@ -14,7 +14,7 @@ from .base import EmailProvider, Inbox
 
 log = logging.getLogger(__name__)
 
-BASE_URL = "https://api.lewattok.web.id"
+BASE_URL = os.getenv("LEWATTOK_BASE_URL", "https://api.lewattok.web.id")
 DEFAULT_DOMAINS = [
     "lewattok.web.id", "neorastorepl.my.id", "openfile.my.id",
     "moymoy.me", "mail.wubook.net", "inbox.tmpmail.net",

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from src.utils.http import HttpClient
 
 log = logging.getLogger(__name__)
 
-GITHUB_API = "https://api.github.com"
+GITHUB_API = os.getenv("GITHUB_API_URL", "https://api.github.com")
 
 
 class GithubApiClient:

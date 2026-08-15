@@ -14,7 +14,7 @@ from .base import EmailProvider, Inbox
 
 log = logging.getLogger(__name__)
 
-MAILTM_API_URL = "https://api.mail.tm"
+MAILTM_API_URL = os.getenv("MAILTM_BASE_URL", "https://api.mail.tm")
 
 
 class MailTmInbox(Inbox):

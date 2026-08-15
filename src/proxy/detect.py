@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -11,8 +12,8 @@ import requests
 
 log = logging.getLogger(__name__)
 
-IP_API_URL = "http://ip-api.com/json"
-IPINFO_URL = "https://ipinfo.io/json"
+IP_API_URL = os.getenv("IP_API_URL", "http://ip-api.com/json")
+IPINFO_URL = os.getenv("IPINFO_URL", "https://ipinfo.io/json")
 
 
 @dataclass

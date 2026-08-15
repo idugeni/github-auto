@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import string
 import time
@@ -19,8 +20,8 @@ from src.browser.human import (
 
 log = logging.getLogger(__name__)
 
-GITHUB_SIGNUP = "https://github.com/signup"
-GITHUB_HOME = "https://github.com/"
+GITHUB_SIGNUP = os.getenv("GITHUB_SIGNUP_URL", "https://github.com/signup")
+GITHUB_HOME = os.getenv("GITHUB_HOME_URL", "https://github.com/")
 BLOCKED_MARKERS = ("access is temporarily restricted", "temporarily restricted", "datadome")
 
 

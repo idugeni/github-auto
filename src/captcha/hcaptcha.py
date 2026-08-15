@@ -13,7 +13,7 @@ from .base import CaptchaSolver
 
 log = logging.getLogger(__name__)
 
-CAPSOLVER_API = "https://api.capsolver.com"
+CAPSOLVER_API = os.getenv("CAPSOLVER_API_URL", "https://api.capsolver.com")
 
 
 class HCaptchaSolver(CaptchaSolver):
