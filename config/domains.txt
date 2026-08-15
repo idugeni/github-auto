@@ -1,0 +1,6 @@
+# Allowed email domains for temp email
+# One domain per line
+lewattok.web.id
+openfile.my.id
+neorastorepl.my.id
+moymoy.me

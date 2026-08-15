@@ -1,0 +1,61 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+
+# Data (runtime)
+data/accounts.json
+data/accounts.db
+data/checkpoint.json
+data/sessions/
+data/results/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Browser profiles
+.chrome-profile/
+profiles/
+
+# Screenshots
+*.png
+*.jpg
+*.jpeg
+
+# Node
+node_modules/
+frontend/dist/
+frontend/src-tauri/target/
+
+# Rust
+frontend/src-tauri/target/
+*.pdb
+
+# Logs
+logs/
+*.log
+
+# Test
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml

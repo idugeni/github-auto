@@ -1,0 +1,9 @@
+# Proxy list format: protocol://user:pass@host:port|Country Name
+# One proxy per line. Lines starting with # are comments.
+#
+# Examples:
+# http://user:pass@proxy.example.com:8080|United States
+# socks5://user:pass@proxy.example.com:1080|Germany
+# https://proxy.example.com:3128|Japan
+#
+# Leave empty for direct connection (no proxy).
