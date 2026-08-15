@@ -1,4 +1,8 @@
-"""Email manager — provider selection with fallback chain."""
+"""Email manager — provider selection with fallback chain.
+
+Primary provider: LewatTok (lewattok.web.id)
+Fallback chain: LewatTok → Supabase → Gmail → Mail.tm
+"""
 
 from __future__ import annotations
 
@@ -10,22 +14,27 @@ from .base import EmailProvider, Inbox
 
 log = logging.getLogger(__name__)
 
+# Provider priority order (LewatTok first)
+PROVIDER_PRIORITY = ["lewattok", "supabase", "gmail", "mailtm"]
+
 
 def create_provider(name: Optional[str] = None) -> EmailProvider:
-    """Create an email provider by name with automatic fallback."""
+    """Create an email provider by name."""
     provider_name = name or config.email.provider
 
-    if provider_name == "lewattok":
-        return _create_lewattok()
-    elif provider_name == "supabase":
-        return _create_supabase()
-    elif provider_name == "gmail":
-        return _create_gmail()
-    elif provider_name == "mailtm":
-        return _create_mailtm()
-    else:
-        log.warning("Unknown provider '%s', trying LewatTok first", provider_name)
-        return _create_lewattok()
+    providers = {
+        "lewattok": _create_lewattok,
+        "supabase": _create_supabase,
+        "gmail": _create_gmail,
+        "mailtm": _create_mailtm,
+    }
+
+    factory = providers.get(provider_name)
+    if factory:
+        return factory()
+
+    log.warning("Unknown provider '%s', defaulting to LewatTok", provider_name)
+    return _create_lewattok()
 
 
 def _create_lewattok() -> EmailProvider:
@@ -51,36 +60,70 @@ def _create_mailtm() -> EmailProvider:
     return MailTmProvider()
 
 
+def _is_provider_configured(name: str) -> bool:
+    """Check if a provider has required config."""
+    checks = {
+        "lewattok": lambda: bool(config.email.lewattok_api_key),
+        "supabase": lambda: bool(config.email.supabase_url and config.email.supabase_anon_key),
+        "gmail": lambda: bool(os.getenv("GMAIL_CLIENT_ID")),
+        "mailtm": lambda: True,  # Mail.tm works without API key
+    }
+    return checks.get(name, lambda: False)()
+
+
+import os
+
+
 class EmailManager:
-    """Manages email operations with automatic provider fallback."""
+    """Manages email operations with automatic provider fallback.
+
+    Primary: LewatTok
+    Fallback chain: LewatTok → Supabase → Gmail → Mail.tm
+    """
 
     def __init__(self, primary: Optional[str] = None):
-        self._primary = create_provider(primary)
-        self._fallback: Optional[EmailProvider] = None
+        self._primary_name = primary or config.email.provider
+        self._primary = create_provider(self._primary_name)
+        self._fallback_chain: list[tuple[str, EmailProvider]] = []
 
-        # Setup fallback if primary might not work
-        if primary == "lewattok" and not config.email.lewattok_api_key:
-            log.info("LewatTok has no API key, adding Supabase as fallback")
+        # Build fallback chain (exclude primary)
+        for name in PROVIDER_PRIORITY:
+            if name == self._primary_name:
+                continue
             try:
-                self._fallback = _create_supabase()
-            except Exception:
-                log.warning("Supabase fallback not available")
-        elif primary == "supabase" and not config.email.supabase_url:
-            log.info("Supabase not configured, adding LewatTok as fallback")
-            try:
-                self._fallback = _create_lewattok()
-            except Exception:
-                log.warning("LewatTok fallback not available")
+                if _is_provider_configured(name):
+                    provider = create_provider(name)
+                    self._fallback_chain.append((name, provider))
+                    log.debug("Added fallback provider: %s", name)
+            except Exception as exc:
+                log.debug("Failed to init fallback %s: %s", name, exc)
+
+        log.info(
+            "Email manager: primary=%s, fallbacks=%s",
+            self._primary_name,
+            [name for name, _ in self._fallback_chain],
+        )
 
     def create_inbox(self, username: str, domain: Optional[str] = None) -> Inbox:
         """Create inbox with fallback on failure."""
+        # Try primary
         try:
-            return self._primary.create_inbox(username, domain)
+            inbox = self._primary.create_inbox(username, domain)
+            log.info("Inbox created via %s: %s", self._primary_name, inbox.address)
+            return inbox
         except Exception as exc:
-            if self._fallback:
-                log.warning("Primary inbox failed (%s), trying fallback", exc)
-                return self._fallback.create_inbox(username, domain)
-            raise
+            log.warning("Primary (%s) inbox failed: %s", self._primary_name, exc)
+
+        # Try fallbacks
+        for name, provider in self._fallback_chain:
+            try:
+                inbox = provider.create_inbox(username, domain)
+                log.info("Inbox created via fallback %s: %s", name, inbox.address)
+                return inbox
+            except Exception as exc:
+                log.warning("Fallback %s inbox failed: %s", name, exc)
+
+        raise RuntimeError("All email providers failed")
 
     def poll_otp(
         self,
@@ -89,16 +132,27 @@ class EmailManager:
         timeout: int = 120,
     ) -> str:
         """Poll OTP with fallback on failure."""
+        # Try primary
         try:
-            return self._primary.poll_otp(address, sender_contains, timeout)
+            code = self._primary.poll_otp(address, sender_contains, timeout)
+            log.info("OTP received via %s", self._primary_name)
+            return code
         except TimeoutError:
-            if self._fallback:
-                log.info("Primary OTP timeout, trying fallback")
-                try:
-                    return self._fallback.poll_otp(address, sender_contains, timeout)
-                except TimeoutError:
-                    raise
-            raise
+            log.warning("Primary (%s) OTP timeout", self._primary_name)
+        except Exception as exc:
+            log.warning("Primary (%s) OTP failed: %s", self._primary_name, exc)
+
+        # Try fallbacks (with shorter timeout)
+        fallback_timeout = min(timeout, 30)
+        for name, provider in self._fallback_chain:
+            try:
+                code = provider.poll_otp(address, sender_contains, fallback_timeout)
+                log.info("OTP received via fallback %s", name)
+                return code
+            except (TimeoutError, Exception) as exc:
+                log.debug("Fallback %s OTP failed: %s", name, exc)
+
+        raise TimeoutError(f"All email providers failed for OTP: {address}")
 
     def delete_inbox(self, address: str, token: str = "") -> None:
         """Delete inbox (best effort)."""
@@ -106,3 +160,13 @@ class EmailManager:
             self._primary.delete_inbox(address, token)
         except Exception as exc:
             log.debug("Delete inbox failed: %s", exc)
+
+    @property
+    def primary(self) -> str:
+        """Primary provider name."""
+        return self._primary_name
+
+    @property
+    def fallbacks(self) -> list[str]:
+        """Available fallback provider names."""
+        return [name for name, _ in self._fallback_chain]
