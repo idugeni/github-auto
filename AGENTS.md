@@ -388,22 +388,26 @@ When extending this codebase:
 
 ## Current Codebase Stats (Auto-generated)
 
-*Last updated: 2026-08-15 12:43*
+*Last updated: 2026-08-15 19:35*
 
-- **Python LOC:** 2898
-- **Modules:** 7
+- **Python LOC:** 4894
+- **Modules:** 11
 - **Frontend features:** 8
-- **Largest Python module:** `github` (648 LOC)
+- **Largest Python module:** `captcha` (941 LOC)
 - **Largest frontend page:** `register` (135 LOC)
 
 ### Module Health
 
 | Module | Status | LOC |
 |--------|--------|-----|
+| `api` | [OK] | 161 |
 | `browser` | [OK] | 467 |
-| `captcha` | [OK] | 327 |
+| `captcha` | [OK] | 941 |
 | `core` | [OK] | 379 |
-| `email` | [OK] | 477 |
-| `github` | [OK] | 648 |
-| `proxy` | [OK] | 257 |
+| `dashboard` | [OK] | 277 |
+| `email` | [OK] | 891 |
+| `github` | [OK] | 678 |
+| `parallel` | [OK] | 296 |
+| `plugin` | [OK] | 147 |
+| `proxy` | [OK] | 314 |
 | `utils` | [OK] | 343 |

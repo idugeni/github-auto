@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  github-auto:
+    build: .
+    container_name: github-auto
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config/proxies.txt:/app/config/proxies.txt:ro
+    environment:
+      - BROWSER_HEADLESS=true
+      - LOG_LEVEL=INFO
+    networks:
+      - github-auto-net
+
+  # Optional: FastAPI dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: github-auto-dashboard
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - github-auto
+    networks:
+      - github-auto-net
+
+networks:
+  github-auto-net:
+    driver: bridge

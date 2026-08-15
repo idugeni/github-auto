@@ -447,23 +447,27 @@ cli.py
 
 ## Codebase Stats (Auto-generated)
 
-*Last updated: 2026-08-15 12:43*
+*Last updated: 2026-08-15 19:35*
 
 | Category | Files | Total LOC |
 |----------|-------|-----------|
-| Python backend | 25 | 2898 |
+| Python backend | 35 | 4894 |
 | Frontend pages | 8 | 815 |
 
 ### Python Modules
 
 | Module | Files | Total LOC | Avg LOC | Max File | Max LOC |
 |--------|-------|-----------|---------|----------|---------|
+| `api` | 1 | 161 | 161 | `server.py` | 161 |
 | `browser` | 5 | 467 | 93 | `stealth.py` | 201 |
-| `captcha` | 3 | 327 | 109 | `recaptcha.py` | 194 |
+| `captcha` | 6 | 941 | 156 | `octocaptcha.py` | 255 |
 | `core` | 3 | 379 | 126 | `store.py` | 185 |
-| `email` | 4 | 477 | 119 | `supabase.py` | 189 |
-| `github` | 4 | 648 | 162 | `signup.py` | 292 |
-| `proxy` | 2 | 257 | 128 | `manager.py` | 156 |
+| `dashboard` | 1 | 277 | 277 | `main.py` | 277 |
+| `email` | 6 | 891 | 148 | `gmail.py` | 226 |
+| `github` | 4 | 678 | 169 | `signup.py` | 292 |
+| `parallel` | 2 | 296 | 148 | `analytics.py` | 152 |
+| `plugin` | 1 | 147 | 147 | `base.py` | 147 |
+| `proxy` | 2 | 314 | 157 | `manager.py` | 213 |
 | `utils` | 4 | 343 | 85 | `identity.py` | 155 |
 
 ### Frontend Features

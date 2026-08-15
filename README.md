@@ -304,10 +304,10 @@ Built from components of:
 
 ## Codebase Stats
 
-*Last updated: 2026-08-15 12:43*
+*Last updated: 2026-08-15 19:35*
 
 | Category | Files | Total LOC |
 |----------|-------|-----------|
-| Python backend | 25 | 2898 |
+| Python backend | 35 | 4894 |
 | Frontend features | 8 | 815 |
-| **Total** | **33** | **3713** |
+| **Total** | **43** | **5709** |

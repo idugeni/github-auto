@@ -19,6 +19,10 @@ def create_provider(name: Optional[str] = None) -> EmailProvider:
         return _create_lewattok()
     elif provider_name == "supabase":
         return _create_supabase()
+    elif provider_name == "gmail":
+        return _create_gmail()
+    elif provider_name == "mailtm":
+        return _create_mailtm()
     else:
         log.warning("Unknown provider '%s', trying LewatTok first", provider_name)
         return _create_lewattok()
@@ -35,6 +39,16 @@ def _create_supabase() -> EmailProvider:
         supabase_url=config.email.supabase_url,
         anon_key=config.email.supabase_anon_key,
     )
+
+
+def _create_gmail() -> EmailProvider:
+    from .gmail import GmailProvider
+    return GmailProvider()
+
+
+def _create_mailtm() -> EmailProvider:
+    from .mailtm import MailTmProvider
+    return MailTmProvider()
 
 
 class EmailManager:
