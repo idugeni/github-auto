@@ -9,6 +9,8 @@ from typing import Optional
 
 from playwright.sync_api import Page
 
+from src.captcha.octocaptcha import OctocaptchaSolver
+
 log = logging.getLogger(__name__)
 
 CHALLENGE_MARKERS = (
@@ -33,6 +35,19 @@ def needs_otp(html: str) -> bool:
         kw in lower
         for kw in ("two-factor", "otp", 'name="otp"', "authentication code")
     )
+
+
+def detect_challenge_type(page: Page) -> str:
+    """Detect the specific type of GitHub challenge.
+
+    Returns:
+        Challenge type: "device_verification", "two_factor", "unusual_activity",
+                       "code_input", "passkey_required", "unknown_challenge", or "none"
+    """
+    solver = OctocaptchaSolver()
+    if not solver._is_github_challenge(page):
+        return "none"
+    return solver.detect_challenge_type(page)
 
 
 def enter_otp_code(page: Page, code: str) -> bool:
@@ -119,31 +134,46 @@ def handle_device_verification(
     email_address: str,
     timeout: int = 180,
 ) -> bool:
-    """Handle GitHub device verification flow."""
+    """Handle GitHub device verification flow.
+
+    Uses OctocaptchaSolver for challenge detection and OTP entry.
+    """
     log.info("Handling device verification for %s", email_address)
 
-    page_text = page.inner_text("body")
-    if not is_challenge_page(page_text):
+    solver = OctocaptchaSolver(timeout=timeout)
+
+    # Check if there's a challenge
+    if not solver._is_github_challenge(page):
         log.debug("Not a challenge page")
         return True
 
-    # Try to find and enter OTP
-    try:
-        otp_code = wait_for_otp_from_email(
-            email_manager, email_address, "github", timeout
-        )
-        log.info("Got OTP code: %s...", otp_code[:3])
+    # Detect challenge type
+    challenge_type = solver.detect_challenge_type(page)
+    log.info("Challenge type: %s", challenge_type)
 
-        if enter_otp_code(page, otp_code):
-            time.sleep(3)
-            page_text = page.inner_text("body")
-            if not is_challenge_page(page_text):
+    # Handle based on challenge type
+    if challenge_type == "passkey_required":
+        log.warning("Passkey/security key challenge - requires manual intervention")
+        return False
+
+    if challenge_type in ("device_verification", "two_factor", "unusual_activity", "code_input"):
+        # Wait for OTP from email
+        try:
+            otp_code = wait_for_otp_from_email(
+                email_manager, email_address, "github", timeout
+            )
+            log.info("Got OTP code: %s...", otp_code[:3])
+
+            if solver.solve_with_otp(page, otp_code):
                 log.info("Device verification successful")
                 return True
 
-        log.warning("OTP entered but still on challenge page")
-        return False
+            log.warning("OTP entered but challenge may not be resolved")
+            return False
 
-    except TimeoutError:
-        log.warning("OTP timeout during device verification")
-        return False
+        except TimeoutError:
+            log.warning("OTP timeout during device verification")
+            return False
+
+    log.warning("Unhandled challenge type: %s", challenge_type)
+    return False
