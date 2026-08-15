@@ -34,14 +34,38 @@ def _gen_username() -> str:
 
 
 def _gen_password() -> str:
-    """Generate random password meeting GitHub requirements."""
-    length = config.registration.password_length
-    chars = string.ascii_letters + string.digits
-    pw = "".join(random.choices(chars, k=length - 2))
-    # Ensure at least one digit and one lowercase
-    pw += random.choice(string.digits)
-    pw += random.choice(string.ascii_lowercase)
-    return pw
+    """Generate a memorable, strong password.
+
+    Format: Word-Word-Number-Symbol (e.g., "CosmicTiger-42!@#")
+    - Uppercase first letter of each word
+    - Random word combinations
+    - Special characters for strength
+    - Same password for all accounts (memorable)
+    """
+    # Use config password if set, otherwise generate
+    if config.registration.password and config.registration.password != "AutoGen2026!":
+        return config.registration.password
+
+    # Adjectives and nouns for memorable passwords
+    adjectives = [
+        "Cosmic", "Lunar", "Solar", "Nova", "Stellar", "Crystal", "Quantum",
+        "Phantom", "Shadow", "Crystal", "Golden", "Silver", "Crimson", "Azure",
+        "Velvet", "Frozen", "Blazing", "Thunder", "Mystic", "Eternal",
+        "Royal", "Diamond", "Sapphire", "Emerald", "Ruby", "Pearl",
+    ]
+    nouns = [
+        "Tiger", "Dragon", "Phoenix", "Wolf", "Eagle", "Panther", "Falcon",
+        "Lion", "Bear", "Hawk", "Serpent", "Raven", "Stallion", "Cobra",
+        "Jaguar", "Leopard", "Shark", "Viper", "Blaze", "Storm",
+        "Thunder", "Lightning", "Flame", "Frost", "Wave", "Shadow",
+    ]
+
+    adj = random.choice(adjectives)
+    noun = random.choice(nouns)
+    num = random.randint(100, 999)
+    symbols = random.choice(["!@#", "!$", "@#", "!@$", "#!@", "$!@"])
+
+    return f"{adj}{noun}{num}{symbols}"
 
 
 def _is_blocked(page_text: str, title: str = "") -> bool:
