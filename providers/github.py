@@ -1,12 +1,9 @@
-"""GitHub provider — ties all modules for GitHub account creation.
+"""GitHub provider — pure HTTP approach, no browser.
 
-Uses single session throughout:
-1. Start session (patchright + xvfb)
-2. Warmup homepage
-3. Bypass DataDome
-4. Signup
-5. Email verification
-6. Save session
+All operations via HTTP requests with:
+- TLS fingerprint impersonation
+- Cookie persistence
+- Custom CAPTCHA solving
 """
 
 from __future__ import annotations
@@ -20,6 +17,7 @@ from config.settings import config
 from src.core.account import Account, AccountStatus
 from src.email.manager import EmailManager
 from src.proxy.manager import ProxyManager
+from src.github.client import GithubClient
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +25,7 @@ log = logging.getLogger(__name__)
 class GithubProvider:
     """High-level GitHub account creation provider.
 
-    Single session approach for maximum stealth.
+    Pure HTTP approach — no browser required.
     """
 
     def __init__(
@@ -38,13 +36,9 @@ class GithubProvider:
     ):
         self._email = email_manager or EmailManager()
         self._proxy = proxy_manager or ProxyManager()
-        self._headless = headless if headless is not None else config.browser.headless
 
     def create_account(self, context: Optional[dict] = None) -> Account:
-        """Create a single GitHub account.
-
-        Uses single browser session throughout.
-        """
+        """Create a single GitHub account via HTTP."""
         index = (context or {}).get("index", 0)
         start = time.time()
 
@@ -69,70 +63,27 @@ class GithubProvider:
                 error=f"Email creation failed: {exc}",
             )
 
-        # Run signup in single session
-        from src.browser.session import SessionManager
-        from src.browser.datadome import DataDomeBypass
-
-        session = SessionManager()
-        datadome = DataDomeBypass()
+        # Create HTTP client with proxy
+        proxy = self._proxy.next()
+        client = GithubClient(proxy=proxy)
 
         try:
-            # Start session
-            proxy = self._proxy.next()
-            page = session.start(
-                headless=self._headless,
-                proxy=proxy,
-            )
-            context = session.get_context()
+            # Step 1: Warmup
+            log.info("[%d] Warming up session...", index)
+            if not client.warmup():
+                return Account(
+                    username=username,
+                    password=password,
+                    email=email_address,
+                    status=AccountStatus.FAILED,
+                    error="Warmup failed",
+                )
 
-            # Load saved DataDome cookies
-            datadome.load_cookies(context)
+            client._human_delay(1000, 2000)
 
-            # Step 1: Warmup homepage
-            log.info("[%d] Warming up homepage...", index)
-            page.goto("https://github.com/", wait_until="networkidle")
-            time.sleep(random.uniform(2, 4))
-
-            # Step 2: Handle DataDome if present
-            if datadome.is_challenge(page):
-                log.info("[%d] DataDome challenge detected", index)
-                if not datadome.solve_challenge(page):
-                    return Account(
-                        username=username,
-                        password=password,
-                        email=email_address,
-                        status=AccountStatus.FAILED,
-                        error="DataDome challenge failed",
-                    )
-
-            # Step 3: Navigate to signup
-            log.info("[%d] Navigating to signup...", index)
-            page.goto("https://github.com/signup", wait_until="networkidle")
-            time.sleep(random.uniform(3, 5))
-
-            # Check for DataDome again
-            if datadome.is_challenge(page):
-                log.info("[%d] DataDome challenge on signup page", index)
-                if not datadome.solve_challenge(page):
-                    return Account(
-                        username=username,
-                        password=password,
-                        email=email_address,
-                        status=AccountStatus.FAILED,
-                        error="DataDome challenge on signup failed",
-                    )
-
-            # Step 4: Fill signup form
-            log.info("[%d] Filling signup form...", index)
-            from src.github.signup import GithubSignup
-            signup = GithubSignup(
-                page=page,
-                email_address=email_address,
-                password=password,
-                username=username,
-            )
-            result = signup.register()
-
+            # Step 2: Get signup page
+            log.info("[%d] Getting signup page...", index)
+            result = client.get_signup_page()
             if not result.success:
                 return Account(
                     username=username,
@@ -142,7 +93,31 @@ class GithubProvider:
                     error=result.error,
                 )
 
-            # Step 5: Wait for OTP
+            client._human_delay(500, 1000)
+
+            # Step 3: Submit signup
+            log.info("[%d] Submitting signup...", index)
+            result = client.submit_signup(email_address, password, username)
+
+            if result.data.get("is_blocked"):
+                return Account(
+                    username=username,
+                    password=password,
+                    email=email_address,
+                    status=AccountStatus.FAILED,
+                    error="Blocked by GitHub",
+                )
+
+            if not result.success:
+                return Account(
+                    username=username,
+                    password=password,
+                    email=email_address,
+                    status=AccountStatus.FAILED,
+                    error=result.error or "Signup failed",
+                )
+
+            # Step 4: Wait for OTP
             log.info("[%d] Waiting for OTP...", index)
             otp_code = self._email.poll_otp(
                 email_address,
@@ -151,37 +126,40 @@ class GithubProvider:
             )
             log.info("[%d] OTP received: %s...", index, otp_code[:3])
 
-            # Step 6: Enter OTP
-            time.sleep(random.uniform(0.5, 1.0))
-            from src.github.verify import enter_otp_code
-            enter_otp_code(page, otp_code)
+            # Step 5: Submit OTP
+            client._human_delay(500, 1000)
+            result = client.submit_otp(otp_code)
 
-            # Step 7: Save session
-            session.save_session()
-            datadome.save_cookies(context)
+            if result.success:
+                account = Account(
+                    username=username,
+                    password=password,
+                    email=email_address,
+                    status=AccountStatus.CREATED,
+                    provider="github",
+                    proxy=proxy or "",
+                )
+                account.mark_created()
 
-            # Create account
-            account = Account(
-                username=username,
-                password=password,
-                email=email_address,
-                status=AccountStatus.CREATED,
-                provider="github",
-                proxy=proxy or "",
-            )
-            account.mark_created()
+                # Cleanup email
+                try:
+                    self._email.delete_inbox(email_address, inbox.token)
+                except Exception:
+                    pass
 
-            # Cleanup email
-            try:
-                self._email.delete_inbox(email_address, inbox.token)
-            except Exception:
-                pass
-
-            log.info(
-                "[%d] Account created: %s (%.1fs)",
-                index, username, time.time() - start,
-            )
-            return account
+                log.info(
+                    "[%d] Account created: %s (%.1fs)",
+                    index, username, time.time() - start,
+                )
+                return account
+            else:
+                return Account(
+                    username=username,
+                    password=password,
+                    email=email_address,
+                    status=AccountStatus.FAILED,
+                    error=result.error or "OTP verification failed",
+                )
 
         except Exception as exc:
             log.warning("[%d] Account creation failed: %s", index, exc)
@@ -193,4 +171,4 @@ class GithubProvider:
                 error=str(exc),
             )
         finally:
-            session.close()
+            client.close()
