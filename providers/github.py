@@ -1,9 +1,12 @@
-"""GitHub provider — pure HTTP approach, no browser.
+"""GitHub provider — patchright + xvfb approach.
 
-All operations via HTTP requests with:
-- TLS fingerprint impersonation
-- Cookie persistence
-- Custom CAPTCHA solving
+Single session flow:
+1. Start browser (patchright + xvfb)
+2. Warmup homepage
+3. Handle DataDome if needed
+4. Signup
+5. Email verification
+6. Save session
 """
 
 from __future__ import annotations
@@ -17,28 +20,23 @@ from config.settings import config
 from src.core.account import Account, AccountStatus
 from src.email.manager import EmailManager
 from src.proxy.manager import ProxyManager
-from src.github.client import GithubClient
 
 log = logging.getLogger(__name__)
 
 
 class GithubProvider:
-    """High-level GitHub account creation provider.
-
-    Pure HTTP approach — no browser required.
-    """
+    """GitHub account creation with patchright browser."""
 
     def __init__(
         self,
         email_manager: Optional[EmailManager] = None,
         proxy_manager: Optional[ProxyManager] = None,
-        headless: Optional[bool] = None,
     ):
         self._email = email_manager or EmailManager()
         self._proxy = proxy_manager or ProxyManager()
 
     def create_account(self, context: Optional[dict] = None) -> Account:
-        """Create a single GitHub account via HTTP."""
+        """Create a single GitHub account."""
         index = (context or {}).get("index", 0)
         start = time.time()
 
@@ -48,127 +46,183 @@ class GithubProvider:
         password = _gen_password()
 
         # Create temp email
-        log.info("[%d] Creating email inbox for %s", index, username)
+        log.info("[%d] Creating email for %s", index, username)
         try:
             inbox = self._email.create_inbox(username)
             email_address = inbox.address
             log.info("[%d] Email: %s", index, email_address)
         except Exception as exc:
-            log.warning("[%d] Email creation failed: %s", index, exc)
             return Account(
-                username=username,
-                password=password,
-                email="",
-                status=AccountStatus.FAILED,
-                error=f"Email creation failed: {exc}",
+                username=username, password=password, email="",
+                status=AccountStatus.FAILED, error=str(exc),
             )
 
-        # Create HTTP client with proxy
-        proxy = self._proxy.next()
-        client = GithubClient(proxy=proxy)
+        # Start browser session
+        from src.browser.session import SessionManager
+        from src.browser.datadome import DataDomeBypass
+        from src.browser.stealth import apply_stealth
+
+        session = SessionManager()
+        datadome = DataDomeBypass()
 
         try:
-            # Step 1: Warmup
-            log.info("[%d] Warming up session...", index)
-            if not client.warmup():
+            proxy = self._proxy.next()
+            page = session.start(headless=False, proxy=proxy)
+            ctx = session.get_context()
+            apply_stealth(page)
+
+            # Warmup
+            log.info("[%d] Warmup...", index)
+            page.goto(GITHUB_HOME, wait_until="networkidle")
+            time.sleep(random.uniform(2, 4))
+
+            # DataDome check
+            if datadome.is_challenge(page):
+                log.info("[%d] DataDome detected", index)
+                if not datadome.wait_for_solve(page, timeout=60):
+                    return Account(
+                        username=username, password=password, email=email_address,
+                        status=AccountStatus.FAILED, error="DataDome timeout",
+                    )
+
+            # Signup page
+            log.info("[%d] Signup page...", index)
+            page.goto(GITHUB_SIGNUP, wait_until="networkidle")
+            time.sleep(random.uniform(3, 5))
+
+            # DataDome check again
+            if datadome.is_challenge(page):
+                if not datadome.wait_for_solve(page, timeout=60):
+                    return Account(
+                        username=username, password=password, email=email_address,
+                        status=AccountStatus.FAILED, error="DataDome timeout",
+                    )
+
+            # Fill form
+            log.info("[%d] Filling form...", index)
+            self._fill_form(page, email_address, password, username)
+            time.sleep(random.uniform(1, 2))
+
+            # Submit
+            self._click_submit(page)
+            time.sleep(5)
+
+            # Check for errors
+            body = page.inner_text("body")[:500].lower()
+            if "already in use" in body:
                 return Account(
-                    username=username,
-                    password=password,
-                    email=email_address,
-                    status=AccountStatus.FAILED,
-                    error="Warmup failed",
+                    username=username, password=password, email=email_address,
+                    status=AccountStatus.FAILED, error="Username taken",
+                )
+            if "access is temporarily restricted" in body:
+                return Account(
+                    username=username, password=password, email=email_address,
+                    status=AccountStatus.FAILED, error="Blocked",
                 )
 
-            client._human_delay(1000, 2000)
+            # Wait for verification page
+            log.info("[%d] Waiting for verification...", index)
+            try:
+                page.wait_for_url("**/account_verifications**", timeout=30_000)
+            except Exception:
+                pass
 
-            # Step 2: Get signup page
-            log.info("[%d] Getting signup page...", index)
-            result = client.get_signup_page()
-            if not result.success:
-                return Account(
-                    username=username,
-                    password=password,
-                    email=email_address,
-                    status=AccountStatus.FAILED,
-                    error=result.error,
-                )
-
-            client._human_delay(500, 1000)
-
-            # Step 3: Submit signup
-            log.info("[%d] Submitting signup...", index)
-            result = client.submit_signup(email_address, password, username)
-
-            if result.data.get("is_blocked"):
-                return Account(
-                    username=username,
-                    password=password,
-                    email=email_address,
-                    status=AccountStatus.FAILED,
-                    error="Blocked by GitHub",
-                )
-
-            if not result.success:
-                return Account(
-                    username=username,
-                    password=password,
-                    email=email_address,
-                    status=AccountStatus.FAILED,
-                    error=result.error or "Signup failed",
-                )
-
-            # Step 4: Wait for OTP
+            # Get OTP
             log.info("[%d] Waiting for OTP...", index)
             otp_code = self._email.poll_otp(
-                email_address,
-                sender_contains="github",
-                timeout=config.email.otp_timeout,
+                email_address, "github", config.email.otp_timeout
             )
-            log.info("[%d] OTP received: %s...", index, otp_code[:3])
+            log.info("[%d] OTP: %s...", index, otp_code[:3])
 
-            # Step 5: Submit OTP
-            client._human_delay(500, 1000)
-            result = client.submit_otp(otp_code)
+            # Enter OTP
+            time.sleep(random.uniform(0.5, 1.0))
+            self._enter_otp(page, otp_code)
+            time.sleep(3)
 
-            if result.success:
-                account = Account(
-                    username=username,
-                    password=password,
-                    email=email_address,
-                    status=AccountStatus.CREATED,
-                    provider="github",
-                    proxy=proxy or "",
-                )
-                account.mark_created()
+            # Save session
+            session.save_session()
 
-                # Cleanup email
-                try:
-                    self._email.delete_inbox(email_address, inbox.token)
-                except Exception:
-                    pass
+            # Cleanup
+            try:
+                self._email.delete_inbox(email_address, inbox.token)
+            except Exception:
+                pass
 
-                log.info(
-                    "[%d] Account created: %s (%.1fs)",
-                    index, username, time.time() - start,
-                )
-                return account
-            else:
-                return Account(
-                    username=username,
-                    password=password,
-                    email=email_address,
-                    status=AccountStatus.FAILED,
-                    error=result.error or "OTP verification failed",
-                )
+            account = Account(
+                username=username, password=password, email=email_address,
+                status=AccountStatus.CREATED, provider="github", proxy=proxy or "",
+            )
+            account.mark_created()
+            log.info("[%d] Created: %s (%.1fs)", index, username, time.time() - start)
+            return account
 
         except Exception as exc:
-            log.warning("[%d] Account creation failed: %s", index, exc)
+            log.warning("[%d] Failed: %s", index, exc)
             return Account(
-                username=username,
-                password=password,
-                email=email_address,
-                status=AccountStatus.FAILED,
-                error=str(exc),
+                username=username, password=password, email=email_address,
+                status=AccountStatus.FAILED, error=str(exc),
             )
         finally:
-            client.close()
+            session.close()
+
+    def _fill_form(self, page, email: str, password: str, username: str) -> None:
+        """Fill signup form."""
+        selectors = {"email": "#email", "password": "#password", "login": "#login"}
+        for field, selector in selectors.items():
+            value = {"email": email, "password": password, "login": username}[field]
+            try:
+                el = page.locator(selector)
+                if el.count() > 0:
+                    el.click()
+                    el.type(value, delay=random.randint(30, 80))
+                    time.sleep(random.uniform(0.3, 0.8))
+            except Exception:
+                pass
+
+        # Uncheck consent
+        for sel in ["#user_signup_copilot_opt_in", "#user_signup_marketing_consent"]:
+            try:
+                el = page.locator(sel)
+                if el.count() > 0 and el.is_checked():
+                    el.uncheck()
+            except Exception:
+                pass
+
+    def _click_submit(self, page) -> None:
+        """Click Create account button."""
+        try:
+            buttons = page.locator("button")
+            for i in range(buttons.count()):
+                btn = buttons.nth(i)
+                if "create account" in btn.inner_text().lower():
+                    btn.click()
+                    return
+        except Exception:
+            pass
+
+    def _enter_otp(self, page, code: str) -> None:
+        """Enter OTP code."""
+        try:
+            # Individual digit inputs
+            inputs = page.locator("input[maxlength='1']")
+            if inputs.count() >= len(code):
+                for i, digit in enumerate(code):
+                    inputs.nth(i).type(digit, delay=50)
+            else:
+                # Single input
+                page.locator("input").first.fill(code)
+
+            # Click continue
+            buttons = page.locator("button")
+            for i in range(buttons.count()):
+                btn = buttons.nth(i)
+                text = btn.inner_text().lower()
+                if any(kw in text for kw in ["continue", "submit", "verify"]):
+                    btn.click()
+                    break
+        except Exception:
+            pass
+
+
+GITHUB_HOME = "https://github.com/"
+GITHUB_SIGNUP = "https://github.com/signup"

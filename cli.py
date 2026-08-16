@@ -21,7 +21,6 @@ def register(
     count: int = typer.Option(1, "-n", "--count", help="Number of accounts to create"),
     proxy: Optional[str] = typer.Option(None, "--proxy", help="Single proxy URL"),
     proxy_file: Optional[str] = typer.Option(None, "--proxy-file", help="Proxy list file"),
-    headless: bool = typer.Option(False, "--headless", help="Run browser headless"),
     email_provider: Optional[str] = typer.Option(None, "--email-provider", help="Email provider (lewattok/supabase)"),
     delay: Optional[float] = typer.Option(None, "--delay", help="Delay between accounts (seconds)"),
     resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
@@ -51,7 +50,6 @@ def register(
     provider = GithubProvider(
         email_manager=email_mgr,
         proxy_manager=proxy_mgr,
-        headless=headless,
     )
 
     pipeline = Pipeline(
@@ -65,7 +63,6 @@ def register(
     console.print(f"[bold blue]Creating {count} GitHub accounts...[/bold blue]")
     if proxy:
         console.print(f"  Proxy: {proxy[:30]}...")
-    console.print(f"  Headless: {headless}")
     console.print()
 
     start = time.time()
