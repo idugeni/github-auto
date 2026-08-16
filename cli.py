@@ -21,12 +21,9 @@ def register(
     count: int = typer.Option(1, "-n", "--count", help="Number of accounts to create"),
     proxy: Optional[str] = typer.Option(None, "--proxy", help="Single proxy URL"),
     proxy_file: Optional[str] = typer.Option(None, "--proxy-file", help="Proxy list file"),
-    driver: str = typer.Option("camoufox", "--driver", help="Browser driver (camoufox/patchright)"),
     headless: bool = typer.Option(False, "--headless", help="Run browser headless"),
-    password: Optional[str] = typer.Option(None, "--password", help="Password for all accounts"),
     email_provider: Optional[str] = typer.Option(None, "--email-provider", help="Email provider (lewattok/supabase)"),
     delay: Optional[float] = typer.Option(None, "--delay", help="Delay between accounts (seconds)"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug screenshots"),
     resume: bool = typer.Option(False, "--resume", help="Resume from checkpoint"),
 ):
     """Create GitHub accounts."""
@@ -54,9 +51,7 @@ def register(
     provider = GithubProvider(
         email_manager=email_mgr,
         proxy_manager=proxy_mgr,
-        driver=driver,
         headless=headless,
-        debug_screenshots=debug,
     )
 
     pipeline = Pipeline(
@@ -70,7 +65,6 @@ def register(
     console.print(f"[bold blue]Creating {count} GitHub accounts...[/bold blue]")
     if proxy:
         console.print(f"  Proxy: {proxy[:30]}...")
-    console.print(f"  Driver: {driver}")
     console.print(f"  Headless: {headless}")
     console.print()
 

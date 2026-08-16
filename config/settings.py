@@ -75,6 +75,10 @@ class BrowserConfig:
     driver: str = field(
         default_factory=lambda: os.getenv("BROWSER_DRIVER", "camoufox")
     )
+    # Signup mode: browser (default, reliable), api (fast but may be blocked), auto
+    signup_mode: str = field(
+        default_factory=lambda: os.getenv("SIGNUP_MODE", "browser")
+    )
     viewport_width: int = field(
         default_factory=lambda: int(os.getenv("BROWSER_VIEWPORT_WIDTH", "1280"))
     )

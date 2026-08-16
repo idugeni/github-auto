@@ -1,13 +1,18 @@
 """GitHub provider — ties all modules for GitHub account creation.
 
-Default mode: Hybrid (API-first, browser fallback)
-- API mode: ~5s per account (fastest)
-- Browser mode: ~30s per account (most reliable)
+Uses single session throughout:
+1. Start session (patchright + xvfb)
+2. Warmup homepage
+3. Bypass DataDome
+4. Signup
+5. Email verification
+6. Save session
 """
 
 from __future__ import annotations
 
 import logging
+import random
 import time
 from typing import Optional
 
@@ -15,7 +20,6 @@ from config.settings import config
 from src.core.account import Account, AccountStatus
 from src.email.manager import EmailManager
 from src.proxy.manager import ProxyManager
-from src.github.hybrid_flow import HybridSignupFlow, SignupResult
 
 log = logging.getLogger(__name__)
 
@@ -23,39 +27,26 @@ log = logging.getLogger(__name__)
 class GithubProvider:
     """High-level GitHub account creation provider.
 
-    Uses hybrid flow: API-first, browser fallback.
+    Single session approach for maximum stealth.
     """
 
     def __init__(
         self,
         email_manager: Optional[EmailManager] = None,
         proxy_manager: Optional[ProxyManager] = None,
-        driver: Optional[str] = None,
         headless: Optional[bool] = None,
-        debug_screenshots: bool = False,
-        mode: str = "auto",  # auto, api, browser
     ):
         self._email = email_manager or EmailManager()
         self._proxy = proxy_manager or ProxyManager()
-        self._driver = driver or config.browser.driver
         self._headless = headless if headless is not None else config.browser.headless
-        self._debug = debug_screenshots
-        self._mode = mode
-
-        # Initialize hybrid flow
-        self._flow = HybridSignupFlow(
-            email_manager=self._email,
-            proxy_manager=self._proxy,
-            mode=self._mode,
-        )
 
     def create_account(self, context: Optional[dict] = None) -> Account:
         """Create a single GitHub account.
 
-        Main entry point for pipeline worker.
+        Uses single browser session throughout.
         """
         index = (context or {}).get("index", 0)
-        attempt = (context or {}).get("attempt", 0)
+        start = time.time()
 
         # Generate credentials
         from src.github.signup import _gen_username, _gen_password
@@ -78,24 +69,106 @@ class GithubProvider:
                 error=f"Email creation failed: {exc}",
             )
 
-        # Run hybrid signup flow
-        start = time.time()
-        result: SignupResult = self._flow.run(
-            username=username,
-            password=password,
-            email=email_address,
-        )
+        # Run signup in single session
+        from src.browser.session import SessionManager
+        from src.browser.datadome import DataDomeBypass
 
-        if result.success:
+        session = SessionManager()
+        datadome = DataDomeBypass()
+
+        try:
+            # Start session
+            proxy = self._proxy.next()
+            page = session.start(
+                headless=self._headless,
+                proxy=proxy,
+            )
+            context = session.get_context()
+
+            # Load saved DataDome cookies
+            datadome.load_cookies(context)
+
+            # Step 1: Warmup homepage
+            log.info("[%d] Warming up homepage...", index)
+            page.goto("https://github.com/", wait_until="networkidle")
+            time.sleep(random.uniform(2, 4))
+
+            # Step 2: Handle DataDome if present
+            if datadome.is_challenge(page):
+                log.info("[%d] DataDome challenge detected", index)
+                if not datadome.solve_challenge(page):
+                    return Account(
+                        username=username,
+                        password=password,
+                        email=email_address,
+                        status=AccountStatus.FAILED,
+                        error="DataDome challenge failed",
+                    )
+
+            # Step 3: Navigate to signup
+            log.info("[%d] Navigating to signup...", index)
+            page.goto("https://github.com/signup", wait_until="networkidle")
+            time.sleep(random.uniform(3, 5))
+
+            # Check for DataDome again
+            if datadome.is_challenge(page):
+                log.info("[%d] DataDome challenge on signup page", index)
+                if not datadome.solve_challenge(page):
+                    return Account(
+                        username=username,
+                        password=password,
+                        email=email_address,
+                        status=AccountStatus.FAILED,
+                        error="DataDome challenge on signup failed",
+                    )
+
+            # Step 4: Fill signup form
+            log.info("[%d] Filling signup form...", index)
+            from src.github.signup import GithubSignup
+            signup = GithubSignup(
+                page=page,
+                email_address=email_address,
+                password=password,
+                username=username,
+            )
+            result = signup.register()
+
+            if not result.success:
+                return Account(
+                    username=username,
+                    password=password,
+                    email=email_address,
+                    status=AccountStatus.FAILED,
+                    error=result.error,
+                )
+
+            # Step 5: Wait for OTP
+            log.info("[%d] Waiting for OTP...", index)
+            otp_code = self._email.poll_otp(
+                email_address,
+                sender_contains="github",
+                timeout=config.email.otp_timeout,
+            )
+            log.info("[%d] OTP received: %s...", index, otp_code[:3])
+
+            # Step 6: Enter OTP
+            time.sleep(random.uniform(0.5, 1.0))
+            from src.github.verify import enter_otp_code
+            enter_otp_code(page, otp_code)
+
+            # Step 7: Save session
+            session.save_session()
+            datadome.save_cookies(context)
+
+            # Create account
             account = Account(
-                username=result.username,
-                password=result.password,
-                email=result.email,
+                username=username,
+                password=password,
+                email=email_address,
                 status=AccountStatus.CREATED,
                 provider="github",
-                proxy=self._proxy.next() or "",
+                proxy=proxy or "",
             )
-            account.metadata["cookies"] = result.cookies
             account.mark_created()
 
             # Cleanup email
@@ -106,15 +179,18 @@ class GithubProvider:
 
             log.info(
                 "[%d] Account created: %s (%.1fs)",
-                index, result.username, time.time() - start,
+                index, username, time.time() - start,
             )
             return account
-        else:
+
+        except Exception as exc:
+            log.warning("[%d] Account creation failed: %s", index, exc)
             return Account(
                 username=username,
                 password=password,
                 email=email_address,
                 status=AccountStatus.FAILED,
-                error=result.error,
-                proxy=self._proxy.next() or "",
+                error=str(exc),
             )
+        finally:
+            session.close()
