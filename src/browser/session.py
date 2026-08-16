@@ -1,4 +1,4 @@
-"""Session management — single session throughout flow."""
+"""Session management — selenium-based."""
 
 from __future__ import annotations
 
@@ -6,8 +6,6 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Optional
-
-from playwright.sync_api import Page
 
 log = logging.getLogger(__name__)
 
@@ -19,40 +17,35 @@ class SessionManager:
         self._session_dir = Path(session_dir)
         self._session_dir.mkdir(parents=True, exist_ok=True)
         self._browser: Any = None
-        self._page: Optional[Page] = None
-        self._context: Any = None
+        self._driver: Any = None
 
     def start(
         self,
         headless: bool = False,
         proxy: Optional[str] = None,
-    ) -> Page:
-        """Start browser and return page."""
+    ) -> Any:
+        """Start browser and return driver."""
         from src.browser.patchright import PatchrightBrowser
 
         self._browser = PatchrightBrowser()
-        self._page = self._browser.launch(headless=headless, proxy=proxy)
-        self._context = self._browser.get_context()
+        self._driver = self._browser.launch(headless=headless, proxy=proxy)
 
+        # Load saved cookies
         self._load_session()
-        return self._page
 
-    def get_page(self) -> Page:
-        if self._page is None:
-            raise RuntimeError("Session not started")
-        return self._page
+        return self._driver
 
-    def get_context(self) -> Any:
-        if self._context is None:
+    def get_driver(self) -> Any:
+        if self._driver is None:
             raise RuntimeError("Session not started")
-        return self._context
+        return self._driver
 
     def save_session(self) -> None:
         """Save cookies."""
-        if self._context is None:
+        if self._driver is None:
             return
         try:
-            cookies = self._context.cookies()
+            cookies = self._driver.get_cookies()
             session_file = self._session_dir / "github_session.json"
             session_file.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
             log.info("Session saved: %d cookies", len(cookies))
@@ -66,20 +59,22 @@ class SessionManager:
             return
         try:
             cookies = json.loads(session_file.read_text(encoding="utf-8"))
-            if cookies:
-                self._context.add_cookies(cookies)
+            if cookies and self._driver:
+                for cookie in cookies:
+                    try:
+                        self._driver.add_cookie(cookie)
+                    except Exception:
+                        pass
                 log.info("Session loaded: %d cookies", len(cookies))
         except Exception as exc:
             log.debug("Failed to load session: %s", exc)
 
     def close(self) -> None:
-        """Close browser."""
         try:
             self.save_session()
         except Exception:
             pass
         if self._browser:
             self._browser.close()
-        self._page = None
-        self._context = None
+        self._driver = None
         self._browser = None

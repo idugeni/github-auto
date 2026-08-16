@@ -1,9 +1,6 @@
-"""Patchright browser driver — undetected Chromium.
+"""Browser driver — undetected-chromedriver.
 
-Key insight from qoderush:
-- DON'T override User-Agent (fingerprint inconsistency)
-- Warm-up homepage before signup
-- Let real browser UA through
+Key: Uses uc which bypasses DataDome/Cloudflare bot detection.
 """
 
 from __future__ import annotations
@@ -14,24 +11,19 @@ import subprocess
 import time
 from typing import Optional
 
-from patchright.sync_api import sync_playwright, Browser, BrowserContext, Page
-
 log = logging.getLogger(__name__)
 
 
 class PatchrightBrowser:
-    """Patchright browser with anti-detection."""
+    """Undetected Chrome browser."""
 
     def __init__(self):
-        self._pw = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
-        self._page: Optional[Page] = None
+        self._driver = None
         self._xvfb_proc = None
 
     def _start_xvfb(self) -> None:
-        """Start Xvfb virtual display on Linux."""
-        if os.name != "nt":  # Not Windows
+        """Start Xvfb on Linux."""
+        if os.name != "nt":
             try:
                 self._xvfb_proc = subprocess.Popen(
                     ["Xvfb", ":99", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
@@ -40,12 +32,11 @@ class PatchrightBrowser:
                 )
                 os.environ["DISPLAY"] = ":99"
                 time.sleep(1)
-                log.info("Xvfb started on :99")
+                log.info("Xvfb started")
             except FileNotFoundError:
-                log.warning("Xvfb not found, using default display")
+                log.warning("Xvfb not found")
 
     def _stop_xvfb(self) -> None:
-        """Stop Xvfb virtual display."""
         if self._xvfb_proc:
             try:
                 self._xvfb_proc.terminate()
@@ -60,89 +51,44 @@ class PatchrightBrowser:
         proxy: Optional[str] = None,
         viewport_width: int = 1920,
         viewport_height: int = 1080,
-    ) -> Page:
-        """Launch browser and return page.
+    ):
+        """Launch undetected Chrome."""
+        import undetected_chromedriver as uc
 
-        Key: DON'T override User-Agent!
-        """
-        # Start Xvfb on Linux if not headless
         if not headless:
             self._start_xvfb()
 
-        self._pw = sync_playwright().start()
-
-        # Launch args for anti-detection
-        args = [
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--disable-webrtc",
-            "--disable-extensions",
-            "--window-size=1920,1080",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--lang=en-US",
-        ]
-
-        self._browser = self._pw.chromium.launch(
-            headless=headless,
-            args=args,
-        )
-
-        # Create context WITHOUT User-Agent override
-        # Key insight: letting real browser UA through avoids fingerprint mismatch
-        context_args = {
-            "viewport": {"width": viewport_width, "height": viewport_height},
-            "locale": "en-US",
-            "timezone_id": "America/New_York",
-        }
+        opts = uc.ChromeOptions()
+        opts.add_argument(f"--window-size={viewport_width},{viewport_height}")
+        opts.add_argument("--no-first-run")
+        opts.add_argument("--no-default-browser-check")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--lang=en-US")
 
         if proxy:
-            context_args["proxy"] = {"server": proxy}
+            opts.add_argument(f"--proxy-server={proxy}")
+            opts.add_argument("--proxy-bypass-list=<-loopback>")
 
-        self._context = self._browser.new_context(**context_args)
-        self._page = self._context.new_page()
+        self._driver = uc.Chrome(
+            options=opts,
+            headless=headless,
+            use_subprocess=True,
+        )
+        self._driver.set_page_load_timeout(60)
 
-        log.info("Browser launched (headless=%s, NO UA override)", headless)
-        return self._page
+        log.info("Browser launched (headless=%s)", headless)
+        return self._driver
 
-    def get_context(self) -> BrowserContext:
-        """Get browser context."""
-        if self._context is None:
-            raise RuntimeError("Browser not launched")
-        return self._context
+    def get_context(self):
+        """Not used with selenium."""
+        return None
 
     def close(self) -> None:
-        """Close browser."""
-        try:
-            if self._page:
-                self._page.close()
-        except Exception:
-            pass
-
-        try:
-            if self._context:
-                self._context.close()
-        except Exception:
-            pass
-
-        try:
-            if self._browser:
-                self._browser.close()
-        except Exception:
-            pass
-
-        try:
-            if self._pw:
-                self._pw.stop()
-        except Exception:
-            pass
-
+        if self._driver:
+            try:
+                self._driver.quit()
+            except Exception:
+                pass
         self._stop_xvfb()
-
-        self._page = None
-        self._context = None
-        self._browser = None
-        self._pw = None
+        self._driver = None
         log.info("Browser closed")
