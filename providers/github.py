@@ -71,10 +71,10 @@ class GithubProvider:
             ctx = session.get_context()
             apply_stealth(page)
 
-            # Warmup
-            log.info("[%d] Warmup...", index)
+            # Warmup — 6 seconds on homepage (key for DataDome)
+            log.info("[%d] Warmup homepage...", index)
             page.goto(GITHUB_HOME, wait_until="networkidle")
-            time.sleep(random.uniform(2, 4))
+            time.sleep(6)  # Critical: 6s warmup per qoderush
 
             # DataDome check
             if datadome.is_challenge(page):
@@ -85,10 +85,10 @@ class GithubProvider:
                         status=AccountStatus.FAILED, error="DataDome timeout",
                     )
 
-            # Signup page
+            # Signup page — 8 seconds wait (key for DataDome)
             log.info("[%d] Signup page...", index)
             page.goto(GITHUB_SIGNUP, wait_until="networkidle")
-            time.sleep(random.uniform(3, 5))
+            time.sleep(8)  # Critical: 8s wait per qoderush
 
             # DataDome check again
             if datadome.is_challenge(page):
@@ -97,6 +97,12 @@ class GithubProvider:
                         username=username, password=password, email=email_address,
                         status=AccountStatus.FAILED, error="DataDome timeout",
                     )
+
+            # Wait for email field
+            try:
+                page.wait_for_selector("#email", timeout=30_000)
+            except Exception:
+                pass
 
             # Fill form
             log.info("[%d] Filling form...", index)

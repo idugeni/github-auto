@@ -1,7 +1,9 @@
 """Patchright browser driver — undetected Chromium.
 
-Uses patchright for anti-detection.
-Runs with xvfb on Linux for headless display.
+Key insight from qoderush:
+- DON'T override User-Agent (fingerprint inconsistency)
+- Warm-up homepage before signup
+- Let real browser UA through
 """
 
 from __future__ import annotations
@@ -56,12 +58,12 @@ class PatchrightBrowser:
         self,
         headless: bool = False,
         proxy: Optional[str] = None,
-        viewport_width: int = 1280,
-        viewport_height: int = 720,
+        viewport_width: int = 1920,
+        viewport_height: int = 1080,
     ) -> Page:
         """Launch browser and return page.
 
-        On Linux, uses Xvfb for headless display.
+        Key: DON'T override User-Agent!
         """
         # Start Xvfb on Linux if not headless
         if not headless:
@@ -78,6 +80,9 @@ class PatchrightBrowser:
             "--disable-webrtc",
             "--disable-extensions",
             "--window-size=1920,1080",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--lang=en-US",
         ]
 
         self._browser = self._pw.chromium.launch(
@@ -85,10 +90,10 @@ class PatchrightBrowser:
             args=args,
         )
 
-        # Create context
+        # Create context WITHOUT User-Agent override
+        # Key insight: letting real browser UA through avoids fingerprint mismatch
         context_args = {
             "viewport": {"width": viewport_width, "height": viewport_height},
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "locale": "en-US",
             "timezone_id": "America/New_York",
         }
@@ -99,7 +104,7 @@ class PatchrightBrowser:
         self._context = self._browser.new_context(**context_args)
         self._page = self._context.new_page()
 
-        log.info("Browser launched (headless=%s)", headless)
+        log.info("Browser launched (headless=%s, NO UA override)", headless)
         return self._page
 
     def get_context(self) -> BrowserContext:
