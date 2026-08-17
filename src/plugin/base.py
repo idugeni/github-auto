@@ -53,14 +53,6 @@ class CaptchaSolverPlugin(Plugin):
         """Create CAPTCHA solver instance."""
 
 
-class BrowserDriverPlugin(Plugin):
-    """Plugin for browser drivers."""
-
-    @abstractmethod
-    def create_driver(self, config: dict[str, Any]) -> Any:
-        """Create browser driver instance."""
-
-
 class PluginManager:
     """Manage plugins."""
 

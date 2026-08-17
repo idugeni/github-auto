@@ -23,7 +23,6 @@ class AccountMetrics:
     error: str = ""
     proxy: str = ""
     email_provider: str = ""
-    browser_driver: str = ""
     captcha_solved: bool = False
     otp_wait_time: float = 0.0
 
@@ -84,7 +83,6 @@ class Analytics:
             start_time=time.time(),
             proxy=proxy,
             email_provider=kwargs.get("email_provider", ""),
-            browser_driver=kwargs.get("browser_driver", ""),
         )
         self._metrics.append(metric)
 

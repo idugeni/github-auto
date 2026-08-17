@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Browser
 - Camoufox driver (Firefox-based)
-- Patchright driver (Chromium-based)
+- Camoufox headless driver (Firefox-based)
 - 25+ anti-fingerprint measures
 - Human behavior simulation
 - Dynamic Chrome user-agent
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **qoderush** — GitHub signup flow, HTTP client, proxy rotation
 - **autoregister-account** — Stealth suite, temp email, reCAPTCHA ASR
 - **tokenharbor** — Turnstile solver, email detection
-- **aerolink** — Turnstile API, Patchright integration
+- **aerolink** — Turnstile API integration
 
 ## Version History
 

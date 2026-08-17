@@ -2,23 +2,30 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 use tauri::Manager;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
     pub username: String,
     pub password: String,
     pub email: String,
+    #[serde(default)]
     pub email_password: String,
     pub status: String,
+    #[serde(default)]
     pub recovery_codes: Vec<String>,
+    #[serde(default)]
     pub provider: String,
+    #[serde(default)]
     pub proxy: String,
+    #[serde(default)]
     pub error: String,
     pub created_at: String,
+    #[serde(default)]
     pub verified_at: Option<String>,
+    #[serde(default)]
     pub metadata: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Status {
     pub total: usize,
     pub created: usize,
@@ -26,30 +33,47 @@ pub struct Status {
     pub failed: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StatusResponse {
+    pub total: usize,
+    pub created: usize,
+    pub verified: usize,
+    pub failed: usize,
+    #[serde(default)]
+    pub accounts: Vec<Account>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProxyEntry {
     pub url: String,
+    #[serde(default)]
     pub country_code: String,
+    #[serde(default)]
     pub country_name: String,
     pub healthy: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LogEntry {
+    #[serde(default)]
     pub timestamp: String,
+    #[serde(default)]
     pub level: String,
+    #[serde(default)]
     pub message: String,
+    #[serde(default)]
     pub module: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub email_provider: String,
-    pub browser_driver: String,
     pub browser_headless: bool,
+    #[serde(default)]
     pub proxy_url: String,
     pub delay_base: f64,
     pub delay_jitter: f64,
+    #[serde(default)]
     pub password: String,
 }
 
@@ -69,99 +93,112 @@ fn run_python_command(args: &[&str]) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_accounts() -> Result<Vec<Account>, String> {
-    let output = run_python_command(&["status", "--json"])?;
-    let accounts: Vec<Account> = serde_json::from_str(&output)
-        .unwrap_or_default();
-    Ok(accounts)
+async fn get_accounts() -> Result<Vec<Account>, String> {
+    let output = tokio::task::spawn_blocking(|| run_python_command(&["status", "--json"]))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+    let response: StatusResponse = serde_json::from_str(&output)
+        .map_err(|e| format!("Parse error: {}", e))?;
+    Ok(response.accounts)
 }
 
 #[tauri::command]
-fn get_status() -> Result<Status, String> {
-    let output = run_python_command(&["status", "--json"])?;
-    let status: Status = serde_json::from_str(&output)
-        .unwrap_or(Status { total: 0, created: 0, verified: 0, failed: 0 });
-    Ok(status)
+async fn get_status() -> Result<Status, String> {
+    let output = tokio::task::spawn_blocking(|| run_python_command(&["status", "--json"]))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+    let response: StatusResponse = serde_json::from_str(&output)
+        .map_err(|e| format!("Parse error: {}", e))?;
+    Ok(Status {
+        total: response.total,
+        created: response.created,
+        verified: response.verified,
+        failed: response.failed,
+    })
 }
 
 #[tauri::command]
-fn register_accounts(count: usize, _config: serde_json::Value) -> Result<String, String> {
-    run_python_command(&["register", "-n", &count.to_string()])
+async fn register_accounts(count: usize) -> Result<String, String> {
+    let count_str = count.to_string();
+    tokio::task::spawn_blocking(move || run_python_command(&["register", "-n", &count_str]))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn export_accounts(format: String, path: String) -> Result<usize, String> {
-    let output = run_python_command(&["export", "-f", &format, "-o", &path])?;
-    output.trim().parse::<usize>().map_err(|e| e.to_string())
+async fn export_accounts(format: String, path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_python_command(&["export", "-f", &format, "-o", &path]))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_config() -> Result<AppConfig, String> {
-    let output = run_python_command(&["config", "--json"])?;
+async fn get_config() -> Result<AppConfig, String> {
+    let output = tokio::task::spawn_blocking(|| run_python_command(&["config", "--json"]))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
     let config: AppConfig = serde_json::from_str(&output)
-        .unwrap_or(AppConfig {
-            email_provider: "lewattok".to_string(),
-            browser_driver: "camoufox".to_string(),
-            browser_headless: false,
-            proxy_url: String::new(),
-            delay_base: 8.0,
-            delay_jitter: 2.0,
-            password: "AutoGen2026!".to_string(),
-        });
+        .map_err(|e| format!("Parse error: {}", e))?;
     Ok(config)
 }
 
 #[tauri::command]
-fn update_config(config: AppConfig) -> Result<(), String> {
-    let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
-    run_python_command(&["config", "set", &json])?;
-    Ok(())
+async fn update_config(key: String, value: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_python_command(&["config-set", &key, &value]))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_proxies() -> Result<Vec<ProxyEntry>, String> {
-    let output = run_python_command(&["proxy", "list", "--json"])?;
+async fn get_proxies() -> Result<Vec<ProxyEntry>, String> {
+    let output = tokio::task::spawn_blocking(|| run_python_command(&["proxy", "list", "--json"]))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
     let proxies: Vec<ProxyEntry> = serde_json::from_str(&output)
-        .unwrap_or_default();
+        .map_err(|e| format!("Parse error: {}", e))?;
     Ok(proxies)
 }
 
 #[tauri::command]
-fn add_proxy(url: String) -> Result<(), String> {
-    run_python_command(&["proxy", "add", &url])?;
-    Ok(())
+async fn add_proxy(url: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_python_command(&["proxy", "add", &url]))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn remove_proxy(url: String) -> Result<(), String> {
-    run_python_command(&["proxy", "remove", &url])?;
-    Ok(())
+async fn remove_proxy(url: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_python_command(&["proxy", "remove", &url]))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn test_proxy(url: String) -> Result<bool, String> {
-    let output = run_python_command(&["proxy", "test", &url])?;
-    Ok(output.trim() == "ok")
+async fn test_proxy(url: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_python_command(&["proxy", "test", &url]))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_logs(lines: Option<usize>) -> Result<Vec<LogEntry>, String> {
+async fn get_logs(lines: Option<usize>) -> Result<Vec<LogEntry>, String> {
     let n = lines.unwrap_or(100).to_string();
-    let output = run_python_command(&["logs", "-n", &n, "--json"])?;
+    let output = tokio::task::spawn_blocking(move || run_python_command(&["logs", "-n", &n, "--json"]))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
     let logs: Vec<LogEntry> = serde_json::from_str(&output)
-        .unwrap_or_default();
+        .map_err(|e| format!("Parse error: {}", e))?;
     Ok(logs)
-}
-
-#[tauri::command]
-fn start_registration(count: usize) -> Result<String, String> {
-    run_python_command(&["register", "-n", &count.to_string()])
-}
-
-#[tauri::command]
-fn stop_registration() -> Result<(), String> {
-    // Signal Python process to stop
-    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -180,8 +217,6 @@ pub fn run() {
             remove_proxy,
             test_proxy,
             get_logs,
-            start_registration,
-            stop_registration,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,22 +1,17 @@
-"""Anti-detection stealth injection."""
+"""Anti-detection stealth injection for camoufox."""
 
 from __future__ import annotations
 
-from playwright.sync_api import Page
+from typing import Any
 
 
-def get_stealth_script() -> str:
-    """Generate minimal stealth script for patchright."""
-    return """
-    // webdriver
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+def apply_stealth(page: Any) -> None:
+    """Apply stealth measures to page."""
+    page.add_init_script("""
+        // Hide webdriver
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 
-    // Chrome runtime
-    if (!window.chrome) window.chrome = {};
-    if (!window.chrome.runtime) window.chrome.runtime = { connect: function() {}, sendMessage: function() {} };
-    """
-
-
-def apply_stealth(page: Page) -> None:
-    """Apply stealth to page."""
-    page.add_init_script(get_stealth_script())
+        // Chrome runtime
+        if (!window.chrome) window.chrome = {};
+        if (!window.chrome.runtime) window.chrome.runtime = { connect: function() {}, sendMessage: function() {} };
+    """)

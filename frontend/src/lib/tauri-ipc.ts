@@ -39,7 +39,6 @@ export interface LogEntry {
 
 export interface AppConfig {
   email_provider: string;
-  browser_driver: string;
   browser_headless: boolean;
   proxy_url: string;
   delay_base: number;
@@ -56,18 +55,15 @@ export async function getStatus(): Promise<Status> {
   return invoke<Status>("get_status");
 }
 
-export async function registerAccounts(
-  count: number,
-  config: Partial<AppConfig>
-): Promise<string> {
-  return invoke<string>("register_accounts", { count, config });
+export async function registerAccounts(count: number): Promise<string> {
+  return invoke<string>("register_accounts", { count });
 }
 
 export async function exportAccounts(
   format: string,
   path: string
-): Promise<number> {
-  return invoke<number>("export_accounts", { format, path });
+): Promise<string> {
+  return invoke<string>("export_accounts", { format, path });
 }
 
 export async function getConfig(): Promise<AppConfig> {
@@ -75,41 +71,28 @@ export async function getConfig(): Promise<AppConfig> {
 }
 
 export async function updateConfig(
-  config: Partial<AppConfig>
-): Promise<void> {
-  return invoke<void>("update_config", { config });
+  key: string,
+  value: string
+): Promise<string> {
+  return invoke<string>("update_config", { key, value });
 }
 
 export async function getProxies(): Promise<ProxyEntry[]> {
   return invoke<ProxyEntry[]>("get_proxies");
 }
 
-export async function addProxy(url: string): Promise<void> {
-  return invoke<void>("add_proxy", { url });
+export async function addProxy(url: string): Promise<string> {
+  return invoke<string>("add_proxy", { url });
 }
 
-export async function removeProxy(url: string): Promise<void> {
-  return invoke<void>("remove_proxy", { url });
+export async function removeProxy(url: string): Promise<string> {
+  return invoke<string>("remove_proxy", { url });
 }
 
-export async function testProxy(url: string): Promise<boolean> {
-  return invoke<boolean>("test_proxy", { url });
+export async function testProxy(url: string): Promise<string> {
+  return invoke<string>("test_proxy", { url });
 }
 
 export async function getLogs(lines?: number): Promise<LogEntry[]> {
   return invoke<LogEntry[]>("get_logs", { lines: lines ?? 100 });
-}
-
-export async function getAccountsFromStore(): Promise<Account[]> {
-  return invoke<Account[]>("get_accounts");
-}
-
-export async function startRegistration(
-  count: number
-): Promise<string> {
-  return invoke<string>("start_registration", { count });
-}
-
-export async function stopRegistration(): Promise<void> {
-  return invoke<void>("stop_registration");
 }

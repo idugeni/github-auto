@@ -36,8 +36,6 @@ store = AccountStore(config.storage.accounts_file)
 class RegisterRequest(BaseModel):
     count: int = 1
     proxy: Optional[str] = None
-    driver: str = "camoufox"
-    headless: bool = False
 
 
 @app.get("/api/v1/status")
@@ -87,8 +85,6 @@ async def register_accounts(request: RegisterRequest):
         "message": f"Registration started for {request.count} accounts",
         "status": "started",
         "config": {
-            "driver": request.driver,
-            "headless": request.headless,
             "proxy": request.proxy,
         },
     }

@@ -29,7 +29,7 @@ github-auto/
 ├── src/
 │   ├── core/                # Account model, store, pipeline
 │   ├── email/               # Temp email providers (LewatTok, Supabase)
-│   ├── browser/             # Browser drivers (Camoufox, Patchright) + stealth
+│   ├── browser/             # Browser driver (Camoufox headless) + stealth
 │   ├── captcha/             # CAPTCHA solvers (reCAPTCHA, Turnstile)
 │   ├── github/              # GitHub signup, verification, session
 │   ├── proxy/               # Proxy rotation and detection
@@ -237,7 +237,7 @@ EmailManager → primary provider (LewatTok) → fallback (Supabase) on failure
 ### Browser Driver Selection
 
 ```
-GithubProvider → Camoufox (Firefox, anti-fingerprint) or Patchright (Chromium)
+GithubProvider → Camoufox (Firefox, headless, anti-fingerprint)
 ```
 
 ### Glassmorphism Design
@@ -302,7 +302,7 @@ class TestSupabaseOTP:
 | `SUPABASE_URL` | Supabase project URL | For Supabase | - |
 | `SUPABASE_ANON_KEY` | Supabase anon key | For Supabase | - |
 | `GROQ_API_KEY` | Groq API for Whisper ASR | For reCAPTCHA | - |
-| `BROWSER_DRIVER` | `camoufox` or `patchright` | No | `camoufox` |
+| `BROWSER_HEADLESS` | Run headless | No | `true` |
 | `BROWSER_HEADLESS` | Run headless | No | `false` |
 | `REGISTRATION_PASSWORD` | Default password | No | `AutoGen2026!` |
 | `PROXY_URL` | Single proxy | No | - |
@@ -436,7 +436,7 @@ cli.py
         │     └── src/email/supabase.py (SupabaseEmailProvider)
         ├── src/browser/camoufox.py (CamoufoxBrowser)
         │     └── src/browser/stealth.py (apply_stealth)
-        ├── src/browser/patchright.py (PatchrightBrowser)
+        ├── src/browser/camoufox.py (CamoufoxBrowser)
         │     └── src/browser/stealth.py (apply_stealth)
         ├── src/github/signup.py (GithubSignup)
         ├── src/github/verify.py (enter_otp_code)

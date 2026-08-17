@@ -61,7 +61,7 @@ Detailed architecture documentation for github-auto.
          ├──► BrowserDriver.launch(proxy)
          │         │
          │         ├──► CamoufoxBrowser.launch()
-         │         └──► PatchrightBrowser.launch()
+         │         └──► CamoufoxBrowser.launch()
          │
          ├──► GithubSignup.register()
          │         │
@@ -109,9 +109,9 @@ _create_browser(driver_name)
          │                   ├── geoip=True
          │                   └── Anti-detection built-in
          │
-         └──► "patchright" → PatchrightBrowser
+         └──► "camoufox" → CamoufoxBrowser
                    │
-                   └──► Patchright (Chromium-based)
+                   └──► Camoufox (Firefox-based)
                              │
                              ├── apply_stealth() → 25+ measures
                              ├── CHROME_ARGS (30+ flags)
@@ -151,11 +151,9 @@ _create_browser(driver_name)
 
 | File | LOC | Responsibility |
 |------|-----|----------------|
-| `base.py` | 43 | Abstract `BrowserDriver` interface |
-| `camoufox.py` | 50 | Camoufox (Firefox) driver |
-| `patchright.py` | 78 | Patchright (Chromium) driver |
-| `stealth.py` | 201 | 25+ anti-fingerprint measures |
-| `human.py` | 95 | Human behavior simulation |
+| `camoufox.py` | 50 | Camoufox (Firefox) headless driver |
+| `session.py` | 60 | Session + cookie management |
+| `stealth.py` | 20 | Anti-detection injection |
 
 **Design Principles:**
 - All drivers implement `BrowserDriver` ABC

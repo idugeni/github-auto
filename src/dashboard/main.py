@@ -88,8 +88,7 @@ async def get_config():
     """Get current configuration."""
     return {
         "email_provider": config.email.provider,
-        "browser_driver": config.browser.driver,
-        "browser_headless": config.browser.headless,
+        "http_client": "curl_cffi",
         "delay_base": config.pipeline.delay_base,
         "delay_jitter": config.pipeline.delay_jitter,
         "max_retries": config.pipeline.max_retries,

@@ -1,12 +1,9 @@
-"""GitHub provider — undetected-chromedriver approach.
+"""GitHub provider — camoufox headless approach.
 
-Single session flow:
-1. Start browser (uc + xvfb)
-2. Warmup homepage (6s)
-3. Handle DataDome if needed
-4. Signup (8s wait)
-5. Email verification
-6. Save session
+Uses Camoufox (Firefox-based) with headless mode for:
+- Deep anti-fingerprint bypass
+- DataDome bypass via real Firefox fingerprint
+- No visible browser window
 """
 
 from __future__ import annotations
@@ -15,10 +12,6 @@ import logging
 import random
 import time
 from typing import Optional
-
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 from config.settings import config
 from src.core.account import Account, AccountStatus
@@ -32,7 +25,7 @@ GITHUB_SIGNUP = "https://github.com/signup"
 
 
 class GithubProvider:
-    """GitHub account creation with undetected-chromedriver."""
+    """GitHub account creation with camoufox headless."""
 
     def __init__(
         self,
@@ -48,6 +41,7 @@ class GithubProvider:
         start = time.time()
 
         from src.github.signup import _gen_username, _gen_password
+
         username = _gen_username()
         password = _gen_password()
 
@@ -63,63 +57,45 @@ class GithubProvider:
                 status=AccountStatus.FAILED, error=str(exc),
             )
 
-        # Start browser
+        # Start camoufox headless with sticky proxy
         from src.browser.session import SessionManager
-        from src.browser.datadome import DataDomeBypass
 
         session = SessionManager()
-        datadome = DataDomeBypass()
+        session_id = f"signup_{username}"
+        proxy = self._proxy.next_sticky(session_id, ttl=600)  # 10 min sticky
 
         try:
-            proxy = self._proxy.next()
-            driver = session.start(headless=False, proxy=proxy)
+            page = session.start(headless=True, proxy=proxy)
 
-            # Warmup — 6 seconds on homepage
+            # Step 1: Warmup homepage
             log.info("[%d] Warmup homepage...", index)
-            driver.get(GITHUB_HOME)
-            time.sleep(6)
+            page.goto(GITHUB_HOME, timeout=30000)
+            time.sleep(random.uniform(4, 6))
 
-            # Check for DataDome
-            if datadome.is_driver_blocked(driver):
-                log.info("[%d] DataDome detected", index)
-                if not datadome.wait_for_solve_driver(driver, timeout=60):
-                    return Account(
-                        username=username, password=password, email=email_address,
-                        status=AccountStatus.FAILED, error="DataDome timeout",
-                    )
-
-            # Signup page — 8 seconds wait
+            # Step 2: Signup page
             log.info("[%d] Signup page...", index)
-            driver.get(GITHUB_SIGNUP)
-            time.sleep(8)
+            page.goto(GITHUB_SIGNUP, timeout=30000)
 
-            # Check for DataDome again
-            if datadome.is_driver_blocked(driver):
-                if not datadome.wait_for_solve_driver(driver, timeout=60):
-                    return Account(
-                        username=username, password=password, email=email_address,
-                        status=AccountStatus.FAILED, error="DataDome timeout",
-                    )
-
-            # Wait for email field
+            # Wait for React to render form
             try:
-                WebDriverWait(driver, 30).until(
-                    EC.presence_of_element_located((By.ID, "email"))
-                )
+                page.wait_for_selector("#email", timeout=15000)
+                log.info("[%d] Signup form loaded", index)
             except Exception:
-                pass
+                log.warning("[%d] Signup form timeout", index)
 
-            # Fill form
-            log.info("[%d] Filling form...", index)
-            self._fill_form(driver, email_address, password, username)
             time.sleep(random.uniform(1, 2))
 
-            # Submit
-            self._click_submit(driver)
+            # Step 3: Fill form
+            log.info("[%d] Filling form...", index)
+            self._fill_form(page, email_address, password, username)
+            time.sleep(random.uniform(1, 2))
+
+            # Step 4: Submit
+            self._click_submit(page)
             time.sleep(5)
 
             # Check for errors
-            body = driver.page_source.lower()
+            body = page.content().lower()
             if "already in use" in body:
                 return Account(
                     username=username, password=password, email=email_address,
@@ -131,31 +107,29 @@ class GithubProvider:
                     status=AccountStatus.FAILED, error="Blocked",
                 )
 
-            # Wait for verification page
+            # Step 5: Wait for verification page
             log.info("[%d] Waiting for verification...", index)
             try:
-                WebDriverWait(driver, 30).until(
-                    lambda d: "/account_verifications" in (d.current_url or "")
-                )
+                page.wait_for_url("**/account_verifications**", timeout=30000)
             except Exception:
                 pass
 
-            # Get OTP
+            # Step 6: Get OTP
             log.info("[%d] Waiting for OTP...", index)
             otp_code = self._email.poll_otp(
-                email_address, "github", config.email.otp_timeout
+                email_address, "github", config.email.otp_timeout,
             )
             log.info("[%d] OTP: %s...", index, otp_code[:3])
 
-            # Enter OTP
+            # Step 7: Enter OTP
             time.sleep(random.uniform(0.5, 1.0))
-            self._enter_code(driver, otp_code)
+            self._enter_code(page, otp_code)
             time.sleep(3)
 
             # Save session
             session.save_session()
 
-            # Cleanup
+            # Cleanup email
             try:
                 self._email.delete_inbox(email_address, inbox.token)
             except Exception:
@@ -163,32 +137,42 @@ class GithubProvider:
 
             account = Account(
                 username=username, password=password, email=email_address,
-                status=AccountStatus.CREATED, provider="github", proxy=proxy or "",
+                status=AccountStatus.CREATED, provider="github",
+                proxy=proxy or "",
             )
             account.mark_created()
+
+            # Mark proxy success
+            if proxy:
+                self._proxy.mark_success(proxy)
+
             log.info("[%d] Created: %s (%.1fs)", index, username, time.time() - start)
             return account
 
         except Exception as exc:
             log.warning("[%d] Failed: %s", index, exc)
+
+            # Mark proxy failed, get replacement for next attempt
+            if proxy:
+                self._proxy.mark_failed(proxy)
+
             return Account(
                 username=username, password=password, email=email_address,
                 status=AccountStatus.FAILED, error=str(exc),
             )
         finally:
+            self._proxy.release_sticky(session_id)
             session.close()
 
-    def _fill_form(self, driver, email: str, password: str, username: str) -> None:
+    def _fill_form(self, page, email: str, password: str, username: str) -> None:
         """Fill signup form."""
         for el_id, value in [("email", email), ("password", password), ("login", username)]:
             try:
-                el = driver.find_element(By.ID, el_id)
+                el = page.locator(f"#{el_id}")
                 el.click()
                 time.sleep(random.uniform(0.3, 0.8))
-                el.clear()
-                for char in value:
-                    el.send_keys(char)
-                    time.sleep(random.uniform(0.02, 0.05))
+                el.fill("")
+                el.type(value, delay=random.randint(20, 50))
                 time.sleep(random.uniform(0.4, 0.9))
             except Exception:
                 pass
@@ -196,51 +180,55 @@ class GithubProvider:
         # Uncheck consent
         for checkbox_id in ["user_signup[copilot_opt_in]", "user_signup[marketing_consent]"]:
             try:
-                cb = driver.find_element(By.ID, checkbox_id)
-                if cb.is_selected():
+                cb = page.locator(f"#{checkbox_id}")
+                if cb.is_checked():
                     cb.click()
             except Exception:
                 pass
 
-    def _click_submit(self, driver) -> None:
+    def _click_submit(self, page) -> None:
         """Click Create account button."""
         try:
-            buttons = driver.find_elements(By.TAG_NAME, "button")
-            for b in buttons:
-                if "create account" in (b.text or "").lower():
-                    b.click()
+            buttons = page.locator("button")
+            count = buttons.count()
+            for i in range(count):
+                btn = buttons.nth(i)
+                if "create account" in (btn.inner_text() or "").lower():
+                    btn.click()
                     return
         except Exception:
             pass
 
-    def _enter_code(self, driver, code: str) -> None:
+    def _enter_code(self, page, code: str) -> None:
         """Enter OTP code."""
         try:
             # Individual digit inputs
-            single_inputs = [
-                i for i in driver.find_elements(By.TAG_NAME, "input")
-                if i.is_displayed() and (i.get_attribute("maxlength") or "") == "1"
-            ]
-            if len(single_inputs) >= len(code):
+            single_inputs = page.locator("input[maxlength='1']")
+            if single_inputs.count() >= len(code):
                 for i, digit in enumerate(code):
-                    single_inputs[i].click()
-                    single_inputs[i].send_keys(digit)
-                    time.sleep(0.15)
+                    single_inputs.nth(i).click()
+                    single_inputs.nth(i).type(digit, delay=50)
             else:
                 # Single input
-                inputs = [i for i in driver.find_elements(By.TAG_NAME, "input") if i.is_displayed()]
-                if inputs:
-                    inputs[0].click()
-                    for digit in code:
-                        inputs[0].send_keys(digit)
-                        time.sleep(0.15)
+                inputs = page.locator("input")
+                count = inputs.count()
+                for i in range(count):
+                    inp = inputs.nth(i)
+                    if inp.is_visible():
+                        inp.click()
+                        for digit in code:
+                            inp.type(digit, delay=50)
+                        break
 
             time.sleep(0.5)
 
             # Click continue
-            for b in driver.find_elements(By.TAG_NAME, "button"):
-                if "continue" in (b.text or "").lower():
-                    b.click()
+            buttons = page.locator("button")
+            count = buttons.count()
+            for i in range(count):
+                btn = buttons.nth(i)
+                if "continue" in (btn.inner_text() or "").lower():
+                    btn.click()
                     return
         except Exception:
             pass

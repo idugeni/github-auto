@@ -228,7 +228,7 @@ src/browser/stealth.py (no deps)
 src/browser/human.py (no deps)
   ↓
 src/browser/camoufox.py (depends on: base, camoufox)
-src/browser/patchright.py (depends on: base, patchright, stealth)
+src/browser/camoufox.py (depends on: camoufox, stealth)
   ↓
 src/captcha/base.py (no deps)
   ↓

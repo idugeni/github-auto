@@ -1,10 +1,11 @@
-"""Proxy rotation and management.
+"""Smart proxy rotation with sticky sessions.
 
-Smart proxy system:
-- Auto-generates DataImpulse sticky proxies if proxies.txt is empty
-- Port-based sticky IPs (10000-20000)
-- Health tracking with cooldown
-- Country detection support
+Features:
+- Auto-generate DataImpulse sticky proxies
+- Smart rotation (latency + health based)
+- Sticky session (same proxy per signup flow)
+- Retry with different proxy on failure
+- Health priority (healthy proxies first)
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 from .detect import detect_proxy_country, ProxyInfo
@@ -34,16 +34,32 @@ class ProxyEntry:
     latency_factor: float = 1.2
     last_used: float = 0.0
     fail_count: int = 0
+    success_count: int = 0
+    total_uses: int = 0
+
+    @property
+    def health_score(self) -> float:
+        """Health score: higher = healthier."""
+        if self.total_uses == 0:
+            return 1.0  # Untested = neutral
+        success_rate = self.success_count / self.total_uses
+        fail_penalty = self.fail_count * 0.3
+        return max(0.0, success_rate - fail_penalty)
+
+    @property
+    def is_healthy(self) -> bool:
+        return self.fail_count < 3 and self.health_score > 0.3
 
 
 class ProxyManager:
-    """Proxy rotation with health tracking.
+    """Smart proxy rotation with sticky sessions.
 
-    Smart features:
+    Features:
     - Auto-generates DataImpulse sticky proxies from credentials
     - Port-based sticky IPs (each port = unique IP)
-    - Round-robin with health check
-    - Cooldown management
+    - Smart rotation: health + latency based
+    - Sticky sessions: same proxy for entire signup flow
+    - Retry with different proxy on failure
     """
 
     def __init__(
@@ -56,12 +72,16 @@ class ProxyManager:
         self._cooldown = cooldown
         self._index = 0
 
+        # Sticky session tracking
+        self._sticky_sessions: dict[str, ProxyEntry] = {}  # session_id -> proxy
+        self._sticky_ttl: dict[str, float] = {}  # session_id -> expiry
+
         if static_proxy:
             self._entries.append(self._parse_line(static_proxy))
         elif proxy_file:
             self._load_file(proxy_file)
 
-        # Smart: auto-generate DataImpulse proxies if empty
+        # Auto-generate DataImpulse proxies if empty
         if not self._entries:
             self._auto_generate_dataimpulse()
 
@@ -98,6 +118,7 @@ class ProxyManager:
 
     def _load_file(self, path: str) -> None:
         """Load proxies from file."""
+        from pathlib import Path
         file_path = Path(path)
         if not file_path.exists():
             log.warning("Proxy file not found: %s", path)
@@ -116,16 +137,7 @@ class ProxyManager:
         log.info("Loaded %d proxies from %s", len(self._entries), path)
 
     def _parse_line(self, line: str) -> ProxyEntry:
-        """Parse proxy line in multiple formats.
-
-        Supported formats:
-        1. hostname:port:login:password
-        2. hostname:port@login:password
-        3. login:password@hostname:port
-        4. protocol://login:password@hostname:port
-        5. login:password:hostname:port
-        6. hostname:port
-        """
+        """Parse proxy line in multiple formats."""
         country_name = ""
         if "|" in line:
             line, country_name = line.split("|", 1)
@@ -144,27 +156,23 @@ class ProxyManager:
         else:
             rest = url
 
-        # Extract credentials if @ present (formats 2, 3, 4)
+        # Extract credentials if @ present
         if "@" in rest:
             left, right = rest.split("@", 1)
-            # Determine which side has host:port
             right_parts = right.split(":")
             if len(right_parts) == 2:
                 try:
                     int(right_parts[1])
-                    # Right side is host:port -> format 3/4
                     username, password = left.split(":", 1) if ":" in left else (left, "")
                     rest = right
                 except ValueError:
-                    # Right side not host:port -> format 2
                     rest = left
                     username, password = right.split(":", 1) if ":" in right else (right, "")
             else:
-                # Default: left is creds, right is host:port
                 username, password = left.split(":", 1) if ":" in left else (left, "")
                 rest = right
 
-        # Parse host:port from remaining part
+        # Parse host:port
         parts = rest.split(":")
         if len(parts) >= 2:
             host = parts[0]
@@ -175,17 +183,14 @@ class ProxyManager:
         elif len(parts) == 1:
             host = parts[0]
 
-        # For formats without @, detect credentials in host:port:login:password
         if not username and len(parts) == 4:
             try:
                 int(parts[1])
-                # Format 1: hostname:port:login:password
                 host = parts[0]
                 port = int(parts[1])
                 username = parts[2]
                 password = parts[3]
             except ValueError:
-                # Format 5: login:password:hostname:port
                 username = parts[0]
                 password = parts[1]
                 host = parts[2]
@@ -194,7 +199,6 @@ class ProxyManager:
                 except ValueError:
                     pass
 
-        # Build normalized URL
         if protocol and host:
             if username and password:
                 url = f"{protocol}://{username}:{password}@{host}:{port}"
@@ -212,37 +216,122 @@ class ProxyManager:
             country_name=country_name,
         )
 
-    def next(self) -> Optional[str]:
-        """Get next available proxy (round-robin with health check)."""
-        if not self._entries:
-            return None
+    # ------------------------------------------------------------------ #
+    # Smart rotation
+    # ------------------------------------------------------------------ #
 
+    def _get_available(self, exclude: Optional[set[str]] = None) -> list[ProxyEntry]:
+        """Get available proxies, sorted by health + latency."""
         now = time.time()
+        exclude = exclude or set()
+
         available = [
             e for e in self._entries
-            if now - e.last_used >= self._cooldown and e.fail_count < 3
+            if e.url not in exclude
+            and e.is_healthy
+            and (now - e.last_used >= self._cooldown or e.total_uses == 0)
         ]
 
         if not available:
-            # Reset fail counts if all are exhausted
-            if all(e.fail_count >= 3 for e in self._entries):
+            # Reset fail counts if all exhausted
+            if all(not e.is_healthy for e in self._entries):
                 for e in self._entries:
-                    e.fail_count = 0
-                available = self._entries
-            else:
-                return None
+                    e.fail_count = max(0, e.fail_count - 1)
+                available = [
+                    e for e in self._entries
+                    if e.url not in exclude
+                    and (now - e.last_used >= self._cooldown or e.total_uses == 0)
+                ]
 
-        entry = available[self._index % len(available)]
-        self._index += 1
-        entry.last_used = now
+        # Sort: healthy first, then by latency, then by fail count
+        available.sort(
+            key=lambda e: (
+                -e.health_score,  # Higher health first
+                e.latency_factor,  # Lower latency first
+                e.fail_count,  # Fewer fails first
+            )
+        )
+
+        return available
+
+    def next(self, exclude: Optional[set[str]] = None) -> Optional[str]:
+        """Get next proxy (smart rotation)."""
+        available = self._get_available(exclude)
+        if not available:
+            return None
+
+        entry = available[0]
+        entry.last_used = time.time()
+        entry.total_uses += 1
         return entry.url
 
+    def next_sticky(self, session_id: str, ttl: int = 300) -> Optional[str]:
+        """Get sticky proxy for session (same proxy for entire flow)."""
+        now = time.time()
+
+        # Check existing sticky session
+        if session_id in self._sticky_sessions:
+            expiry = self._sticky_ttl.get(session_id, 0)
+            if now < expiry:
+                entry = self._sticky_sessions[session_id]
+                entry.last_used = now
+                entry.total_uses += 1
+                return entry.url
+            else:
+                # Session expired, release proxy
+                del self._sticky_sessions[session_id]
+                del self._sticky_ttl[session_id]
+
+        # Get new sticky proxy
+        exclude = set(self._sticky_sessions.keys())
+        available = self._get_available(exclude)
+        if not available:
+            return None
+
+        entry = available[0]
+        entry.last_used = now
+        entry.total_uses += 1
+
+        self._sticky_sessions[session_id] = entry
+        self._sticky_ttl[session_id] = now + ttl
+
+        log.info("Sticky session %s -> proxy %s (ttl=%ds)", session_id, entry.url[:30], ttl)
+        return entry.url
+
+    def release_sticky(self, session_id: str) -> None:
+        """Release sticky session."""
+        if session_id in self._sticky_sessions:
+            del self._sticky_sessions[session_id]
+            del self._sticky_ttl[session_id]
+
+    def retry(self, failed_url: str, exclude: Optional[set[str]] = None) -> Optional[str]:
+        """Get replacement proxy after failure."""
+        self.mark_failed(failed_url)
+
+        exclude = exclude or set()
+        exclude.add(failed_url)
+
+        return self.next(exclude=exclude)
+
+    # ------------------------------------------------------------------ #
+    # Health tracking
+    # ------------------------------------------------------------------ #
+
     def mark_failed(self, proxy_url: str) -> None:
-        """Mark a proxy as failed."""
+        """Mark proxy as failed."""
         for entry in self._entries:
             if entry.url == proxy_url:
                 entry.fail_count += 1
                 log.debug("Proxy marked failed: %s (count=%d)", proxy_url[:30], entry.fail_count)
+                break
+
+    def mark_success(self, proxy_url: str) -> None:
+        """Mark proxy as successful."""
+        for entry in self._entries:
+            if entry.url == proxy_url:
+                entry.success_count += 1
+                if entry.fail_count > 0:
+                    entry.fail_count = max(0, entry.fail_count - 1)
                 break
 
     def detect_country(self, proxy_url: Optional[str] = None) -> ProxyInfo:
@@ -255,8 +344,17 @@ class ProxyManager:
 
     @property
     def available(self) -> int:
-        now = time.time()
-        return sum(
-            1 for e in self._entries
-            if now - e.last_used >= self._cooldown and e.fail_count < 3
-        )
+        return len(self._get_available())
+
+    @property
+    def healthy(self) -> int:
+        return sum(1 for e in self._entries if e.is_healthy)
+
+    def stats(self) -> dict:
+        """Get proxy pool stats."""
+        return {
+            "total": self.count,
+            "available": self.available,
+            "healthy": self.healthy,
+            "sticky_sessions": len(self._sticky_sessions),
+        }

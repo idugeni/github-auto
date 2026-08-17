@@ -1,4 +1,4 @@
-"""hCaptcha solver via CapSolver."""
+"""hCaptcha solver via CapSolver API — HTTP-based."""
 
 from __future__ import annotations
 
@@ -26,58 +26,12 @@ class HCaptchaSolver(CaptchaSolver):
         if not self._api_key:
             log.warning("No CAPSOLVER_API_KEY, hCaptcha solving disabled")
 
-    def _create_task(self, sitekey: str, page_url: str) -> str:
-        """Create hCaptcha solving task."""
-        resp = requests.post(f"{CAPSOLVER_API}/createTask", json={
-            "clientKey": self._api_key,
-            "task": {
-                "type": "HCaptchaTaskProxyLess",
-                "websiteURL": page_url,
-                "websiteKey": sitekey,
-            },
-        })
-        data = resp.json()
-        if data.get("errorId", 0) != 0:
-            raise RuntimeError(f"CapSolver error: {data.get('errorDescription', '')}")
-        return str(data.get("taskId", ""))
-
-    def _get_result(self, task_id: str) -> str:
-        """Get task result."""
-        resp = requests.post(f"{CAPSOLVER_API}/getTaskResult", json={
-            "clientKey": self._api_key,
-            "taskId": task_id,
-        })
-        data = resp.json()
-        if data.get("status") == "ready":
-            return data.get("solution", {}).get("gRecaptchaResponse", "")
-        return ""
-
-    def solve(self, page: 'Page', url: Optional[str] = None) -> Optional[str]:
-        """Solve hCaptcha on page."""
+    def solve(self, site_url: str, site_key: str, **kwargs) -> Optional[str]:
+        """Solve hCaptcha via CapSolver API."""
         if not self._api_key:
             return None
 
-        # Extract sitekey from page
-        try:
-            sitekey = page.evaluate("""
-                () => {
-                    const el = document.querySelector('[data-hcaptcha-widget-id]') ||
-                               document.querySelector('iframe[src*="hcaptcha"]');
-                    if (el) {
-                        return el.getAttribute('data-sitekey') ||
-                               new URL(el.src).searchParams.get('sitekey');
-                    }
-                    return null;
-                }
-            """)
-        except Exception:
-            sitekey = None
-
-        if not sitekey:
-            log.warning("No hCaptcha sitekey found")
-            return None
-
-        return self.solve_async(sitekey, page.url)
+        return self.solve_async(site_key, site_url)
 
     def solve_async(self, sitekey: str, page_url: str) -> Optional[str]:
         """Solve hCaptcha via API."""
@@ -85,16 +39,33 @@ class HCaptchaSolver(CaptchaSolver):
             return None
 
         try:
-            task_id = self._create_task(sitekey, page_url)
+            resp = requests.post(f"{CAPSOLVER_API}/createTask", json={
+                "clientKey": self._api_key,
+                "task": {
+                    "type": "HCaptchaTaskProxyLess",
+                    "websiteURL": page_url,
+                    "websiteKey": sitekey,
+                },
+            })
+            data = resp.json()
+            if data.get("errorId", 0) != 0:
+                raise RuntimeError(f"CapSolver error: {data.get('errorDescription', '')}")
+            task_id = str(data.get("taskId", ""))
             log.info("hCaptcha task created: %s", task_id)
 
             deadline = time.time() + self._timeout
             while time.time() < deadline:
                 time.sleep(3)
-                result = self._get_result(task_id)
-                if result:
-                    log.info("hCaptcha solved")
-                    return result
+                resp = requests.post(f"{CAPSOLVER_API}/getTaskResult", json={
+                    "clientKey": self._api_key,
+                    "taskId": task_id,
+                })
+                data = resp.json()
+                if data.get("status") == "ready":
+                    token = data.get("solution", {}).get("gRecaptchaResponse", "")
+                    if token:
+                        log.info("hCaptcha solved")
+                        return token
 
             log.warning("hCaptcha solve timeout")
             return None

@@ -1,25 +1,21 @@
+import { useEffect } from "react";
 import {
   Users,
   CheckCircle2,
   XCircle,
-  Clock,
   Globe,
   Play,
   ArrowRight,
+  Loader2,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useStore } from "@/lib/store";
 
 interface DashboardPageProps {
   onNavigate: (page: string) => void;
 }
-
-const stats = [
-  { label: "Total Accounts", value: "0", icon: Users, color: "text-blue-500" },
-  { label: "Created", value: "0", icon: CheckCircle2, color: "text-emerald-500" },
-  { label: "Failed", value: "0", icon: XCircle, color: "text-red-500" },
-  { label: "Active Proxies", value: "0", icon: Globe, color: "text-amber-500" },
-];
 
 const quickActions = [
   { label: "Register Accounts", page: "register", icon: Play, description: "Start batch registration" },
@@ -29,6 +25,33 @@ const quickActions = [
 ];
 
 export function DashboardPage({ onNavigate }: DashboardPageProps) {
+  const { status, proxies, loading, refreshStatus, refreshProxies } = useStore();
+
+  useEffect(() => {
+    refreshStatus();
+    refreshProxies();
+    const interval = setInterval(() => {
+      refreshStatus();
+      refreshProxies();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const stats = [
+    { label: "Total Accounts", value: status.total, icon: Users, color: "text-blue-500" },
+    { label: "Created", value: status.created, icon: CheckCircle2, color: "text-emerald-500" },
+    { label: "Failed", value: status.failed, icon: XCircle, color: "text-red-500" },
+    { label: "Active Proxies", value: proxies.filter((p) => p.healthy).length, icon: Globe, color: "text-amber-500" },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Stats Grid */}

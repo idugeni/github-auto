@@ -1,22 +1,44 @@
 import { useState } from "react";
-import { Download, FileText, Table, Copy, Check } from "lucide-react";
+import { Download, FileText, Table, Copy, Check, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { exportAccounts, getAccounts } from "@/lib/tauri-ipc";
 
 export function ExportPage() {
   const [format, setFormat] = useState<"creds" | "csv">("creds");
+  const [outputPath, setOutputPath] = useState("data/results/creds.txt");
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
 
-  const mockPreview = `user1@email.com|Password123|gh_user1
-user2@email.com|Password456|gh_user2
-user3@email.com|Password789|gh_user3`;
+  const handleExport = async () => {
+    setExporting(true);
+    setResult(null);
+    try {
+      await exportAccounts(format, outputPath);
+      setResult(`Exported to ${outputPath}`);
+    } catch (e: unknown) {
+      setResult(`Error: ${e instanceof Error ? e.message : "Export failed"}`);
+    } finally {
+      setExporting(false);
+    }
+  };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(mockPreview);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      const accounts = await getAccounts();
+      const lines = accounts.map((a) =>
+        format === "csv"
+          ? `${a.email},${a.password},${a.username}`
+          : `${a.email}|${a.password}|${a.username}`
+      );
+      navigator.clipboard.writeText(lines.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error("Copy failed:", e);
+    }
   };
 
   return (
@@ -29,7 +51,7 @@ user3@email.com|Password789|gh_user3`;
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => setFormat("creds")}
+              onClick={() => { setFormat("creds"); setOutputPath("data/results/creds.txt"); }}
               className={`flex items-center gap-3 p-4 rounded-lg border transition-all ${
                 format === "creds"
                   ? "border-primary bg-primary/5"
@@ -43,7 +65,7 @@ user3@email.com|Password789|gh_user3`;
               </div>
             </button>
             <button
-              onClick={() => setFormat("csv")}
+              onClick={() => { setFormat("csv"); setOutputPath("data/results/creds.csv"); }}
               className={`flex items-center gap-3 p-4 rounded-lg border transition-all ${
                 format === "csv"
                   ? "border-primary bg-primary/5"
@@ -60,40 +82,35 @@ user3@email.com|Password789|gh_user3`;
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Output Path</label>
-            <Input defaultValue={`data/results/creds.${format === "csv" ? "csv" : "txt"}`} />
+            <Input
+              value={outputPath}
+              onChange={(e) => setOutputPath(e.target.value)}
+            />
           </div>
         </CardContent>
       </Card>
 
-      {/* Preview */}
-      <Card className="glass-card">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Preview</CardTitle>
-          <div className="flex gap-2">
-            <Badge variant="secondary">3 accounts</Badge>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy}>
-              {copied ? (
-                <Check className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <pre className="p-4 rounded-lg bg-muted/50 font-mono text-xs overflow-x-auto">
-            {mockPreview}
-          </pre>
-        </CardContent>
-      </Card>
+      {/* Result */}
+      {result && (
+        <Card className="glass-card">
+          <CardContent className="pt-6">
+            <div className={`text-sm ${result.startsWith("Error") ? "text-destructive" : "text-emerald-500"}`}>
+              {result}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3">
-        <Button className="gap-2">
-          <Download className="w-4 h-4" />
+        <Button onClick={handleExport} disabled={exporting} className="gap-2">
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
           Export Now
         </Button>
-        <Button variant="outline">Copy to Clipboard</Button>
+        <Button variant="outline" onClick={handleCopy} className="gap-2">
+          {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+          {copied ? "Copied!" : "Copy to Clipboard"}
+        </Button>
       </div>
     </div>
   );

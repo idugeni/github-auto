@@ -1,16 +1,14 @@
-"""Abstract CAPTCHA solver interface."""
+"""Abstract CAPTCHA solver interface — HTTP-based, no browser."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from playwright.sync_api import Page
-
 
 class CaptchaSolver(ABC):
     """Base class for CAPTCHA solvers."""
 
     @abstractmethod
-    def solve(self, page: Page, url: Optional[str] = None) -> Optional[str]:
-        """Solve CAPTCHA on page. Returns token or None."""
+    def solve(self, site_url: str, site_key: str, **kwargs) -> Optional[str]:
+        """Solve CAPTCHA via API. Returns token or None."""

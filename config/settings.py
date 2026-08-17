@@ -68,29 +68,6 @@ class EmailConfig:
 
 
 @dataclass(frozen=True)
-class BrowserConfig:
-    headless: bool = field(
-        default_factory=lambda: os.getenv("BROWSER_HEADLESS", "false").lower() == "true"
-    )
-    driver: str = field(
-        default_factory=lambda: os.getenv("BROWSER_DRIVER", "camoufox")
-    )
-    # Signup mode: browser (default, reliable), api (fast but may be blocked), auto
-    signup_mode: str = field(
-        default_factory=lambda: os.getenv("SIGNUP_MODE", "browser")
-    )
-    viewport_width: int = field(
-        default_factory=lambda: int(os.getenv("BROWSER_VIEWPORT_WIDTH", "1280"))
-    )
-    viewport_height: int = field(
-        default_factory=lambda: int(os.getenv("BROWSER_VIEWPORT_HEIGHT", "720"))
-    )
-    default_timeout: int = field(
-        default_factory=lambda: int(os.getenv("BROWSER_TIMEOUT", "60000"))
-    )
-
-
-@dataclass(frozen=True)
 class CaptchaConfig:
     # Groq Whisper ASR
     groq_api_key: str = field(
@@ -201,9 +178,6 @@ class StorageConfig:
     results_dir: str = field(
         default_factory=lambda: os.getenv("RESULTS_DIR", str(BASE_DIR / "data" / "results"))
     )
-    screenshots_dir: str = field(
-        default_factory=lambda: os.getenv("SCREENSHOTS_DIR", str(BASE_DIR / "data" / "results" / "screenshots"))
-    )
     sessions_dir: str = field(
         default_factory=lambda: os.getenv("SESSIONS_DIR", str(BASE_DIR / "data" / "sessions"))
     )
@@ -238,7 +212,6 @@ class DashboardConfig:
 @dataclass(frozen=True)
 class AppConfig:
     email: EmailConfig = field(default_factory=EmailConfig)
-    browser: BrowserConfig = field(default_factory=BrowserConfig)
     captcha: CaptchaConfig = field(default_factory=CaptchaConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
     registration: RegistrationConfig = field(default_factory=RegistrationConfig)

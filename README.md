@@ -21,7 +21,7 @@
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-Driver** | Camoufox (Firefox) or Patchright (undetected Chromium) |
+| **Browser** | Camoufox (Firefox, headless, anti-fingerprint) |
 | **Anti-Detection** | 25+ stealth measures: fingerprint spoofing, canvas noise, timing jitter, WebGL vendor spoofing |
 | **Temp Email** | LewatTok and Supabase providers with automatic fallback |
 | **CAPTCHA Solving** | reCAPTCHA audio ASR via Groq Whisper, Turnstile solver |
@@ -73,7 +73,7 @@ python cli.py register -n 1
 python cli.py register -n 5 --proxy socks5://user:pass@host:1080
 
 # Create accounts with specific driver
-python cli.py register -n 10 --driver patchright --headless
+python cli.py register -n 10 --headless
 
 # Check inventory
 python cli.py status
@@ -108,7 +108,7 @@ github-auto/
 ├── src/
 │   ├── core/                # Account model, store, pipeline
 │   ├── email/               # Temp email providers (LewatTok, Supabase)
-│   ├── browser/             # Browser drivers (Camoufox, Patchright) + stealth
+│   ├── browser/             # Browser driver (Camoufox headless) + stealth
 │   ├── captcha/             # CAPTCHA solvers (reCAPTCHA, Turnstile)
 │   ├── github/              # GitHub signup, verification, session
 │   ├── proxy/               # Proxy rotation and detection
@@ -144,7 +144,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 | `SUPABASE_URL` | Supabase project URL | For Supabase | - |
 | `SUPABASE_ANON_KEY` | Supabase anonymous key | For Supabase | - |
 | `GROQ_API_KEY` | Groq API key for Whisper ASR | For reCAPTCHA | - |
-| `BROWSER_DRIVER` | Browser driver | No | `camoufox` |
+| `BROWSER_HEADLESS` | Run headless | No | `true` |
 | `BROWSER_HEADLESS` | Run browser headless | No | `false` |
 | `REGISTRATION_PASSWORD` | Default password | No | `AutoGen2026!` |
 | `PROXY_URL` | Single proxy URL | No | - |
@@ -178,7 +178,7 @@ Options:
   -n, --count INTEGER       Number of accounts (default: 1)
   --proxy TEXT              Single proxy URL
   --proxy-file TEXT         Proxy list file
-  --driver TEXT             Browser driver: camoufox|patchright (default: camoufox)
+  --headless                Run in headless mode (default: true)
   --headless                Run browser headless
   --email-provider TEXT     Email provider: lewattok|supabase
   --delay FLOAT             Delay between accounts (seconds)
@@ -292,7 +292,7 @@ Built from components of:
 - **qoderush** — GitHub signup flow, HTTP client, proxy rotation
 - **autoregister-account** — Stealth suite, temp email, reCAPTCHA ASR
 - **tokenharbor** — Turnstile solver, email detection
-- **aerolink** — Turnstile API, Patchright integration
+- **aerolink** — Turnstile API integration
 
 ---
 

@@ -1,30 +1,31 @@
 import { useState } from "react";
-import { Play, Square, Settings2 } from "lucide-react";
+import { Play, Square, Settings2, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { registerAccounts, getStatus } from "@/lib/tauri-ipc";
 
 export function RegisterPage() {
   const [count, setCount] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState<{ success: number; failed: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleStart = () => {
+  const handleStart = async () => {
     setIsRunning(true);
-    setProgress(0);
-    // Mock progress
-    const interval = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) {
-          clearInterval(interval);
-          setIsRunning(false);
-          return 100;
-        }
-        return p + 10;
-      });
-    }, 500);
+    setResult(null);
+    setError(null);
+
+    try {
+      await registerAccounts(count);
+      const status = await getStatus();
+      setResult({ success: status.created, failed: status.failed });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Registration failed");
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   return (
@@ -50,36 +51,8 @@ export function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Browser Driver</label>
-              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm">
-                <option value="camoufox">Camoufox</option>
-                <option value="patchright">Patchright</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
               <label className="text-sm font-medium">Email Provider</label>
-              <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm">
-                <option value="lewattok">LewatTok</option>
-                <option value="supabase">Supabase</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Proxy</label>
-              <Input placeholder="socks5://user:pass@host:1080" />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Switch id="headless" />
-              <label htmlFor="headless" className="text-sm">Headless Mode</label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch id="debug" />
-              <label htmlFor="debug" className="text-sm">Debug Screenshots</label>
+              <Input defaultValue="lewattok" disabled />
             </div>
           </div>
         </CardContent>
@@ -93,25 +66,23 @@ export function RegisterPage() {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
-              {isRunning ? "Registering..." : progress === 100 ? "Complete" : "Ready"}
+              {isRunning ? "Registering..." : result ? "Complete" : "Ready"}
             </span>
-            <span className="font-mono">
-              {progress}%
-            </span>
+            {isRunning && <Loader2 className="w-4 h-4 animate-spin" />}
           </div>
 
-          <div className="h-2 bg-secondary rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary transition-all duration-300 rounded-full"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          {result && (
+            <div className="flex gap-4 text-xs">
+              <span>Success: <Badge variant="success">{result.success}</Badge></span>
+              <span>Failed: <Badge variant="destructive">{result.failed}</Badge></span>
+            </div>
+          )}
 
-          <div className="flex gap-4 text-xs text-muted-foreground">
-            <span>Success: <Badge variant="success">0</Badge></span>
-            <span>Failed: <Badge variant="destructive">0</Badge></span>
-            <span>Pending: <Badge variant="secondary">{count}</Badge></span>
-          </div>
+          {error && (
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+              {error}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -123,12 +94,11 @@ export function RegisterPage() {
             Start Registration
           </Button>
         ) : (
-          <Button variant="destructive" onClick={() => setIsRunning(false)} className="gap-2">
+          <Button variant="destructive" disabled className="gap-2">
             <Square className="w-4 h-4" />
-            Stop
+            Running...
           </Button>
         )}
-        <Button variant="outline">Save Config</Button>
       </div>
     </div>
   );

@@ -167,7 +167,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_anon_key
 
 # Browser settings
-BROWSER_DRIVER=camoufox
+BROWSER_HEADLESS=true
 BROWSER_HEADLESS=true
 
 # Performance

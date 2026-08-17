@@ -62,7 +62,7 @@ class AppConfig:
 | Field | Type | Default | Env Var |
 |-------|------|---------|---------|
 | `headless` | `bool` | `false` | `BROWSER_HEADLESS` |
-| `driver` | `str` | `"camoufox"` | `BROWSER_DRIVER` |
+| `driver` | `str` | `"camoufox"` | `BROWSER_HEADLESS` |
 | `viewport_width` | `int` | `1280` | - |
 | `viewport_height` | `int` | `720` | - |
 | `default_timeout` | `int` | `60000` | - |
@@ -371,18 +371,18 @@ browser.close()
 
 ---
 
-### `src.browser.patchright`
+### `src.browser.camoufox`
 
-Patchright browser driver (Chromium-based).
+Camoufox browser driver (Firefox-based, headless anti-fingerprint).
 
 ```python
-from src.browser.patchright import PatchrightBrowser
+from src.browser.camoufox import CamoufoxBrowser
 
 # Initialize
-browser = PatchrightBrowser()
+browser = CamoufoxBrowser()
 
-# Launch
-ctx = browser.launch(headless=False)
+# Launch (headless, no visible window)
+ctx = browser.launch(headless=True)
 page = ctx.new_page()
 
 # Use page
